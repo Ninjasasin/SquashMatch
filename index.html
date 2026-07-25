@@ -206,7 +206,13 @@ td.wrap{white-space:normal}
 tbody tr:hover{background:rgba(255,255,255,.02)}
 tr.me td{background:rgba(201,242,74,.06)}
 .pos{font-weight:800;color:var(--lime)}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.num, th.num{text-align:right;font-variant-numeric:tabular-nums}
+/* El movimiento (+16 / -9) ocupa siempre el mismo ancho, para que el número del
+   rating quede alineado en toda la columna y no lo empuje el largo del signo. */
+.delta{display:inline-block;min-width:34px;margin-left:8px;text-align:left;
+  font-size:12px;font-weight:600}
+.delta.up{color:var(--lime)}
+.delta.down{color:var(--red)}
 
 /* ---------- Modal ---------- */
 .overlay{
@@ -1889,8 +1895,8 @@ function renderRanking(){
       '<td class="pos">'+(i + 1)+'</td>' +
       '<td>'+esc(p.name)+'</td>' +
       '<td class="num"><b>'+(p.rating || '—')+'</b>' +
-        (dif ? ' <span style="color:'+(dif > 0 ? 'var(--lime)' : 'var(--red)')+'">' +
-               (dif > 0 ? '+' : '') + dif + '</span>' : '') + '</td>' +
+        '<span class="delta ' + (dif > 0 ? 'up' : (dif < 0 ? 'down' : '')) + '">' +
+        (dif ? (dif > 0 ? '+' : '') + dif : '') + '</span></td>' +
       '<td>'+esc(p.category)+'</td>' +
       '<td>'+esc(c ? c.name : '—')+'</td>' +
       '<td class="num">'+st.played+'</td>' +
