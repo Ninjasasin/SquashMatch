@@ -606,7 +606,221 @@ grant execute on function public.confirm_result(uuid, boolean) to authenticated;
 grant execute on function public.contact_of(uuid) to authenticated;
 
 -- =============================================================================
--- 11. CAMBIOS EN VIVO
+-- 11. CANCHAS ABIERTAS
+-- Publicar "quiero jugar tal día a tal hora" sin apuntarle a nadie. Otro jugador
+-- se suma y el que publicó confirma. Publicar NO bloquea la cancha: la primera
+-- pareja que confirma se la lleva, venga de un desafío o de una publicación.
+-- No corren por la escalerilla; esa se desafía solo desde la escalerilla.
+-- =============================================================================
+create table if not exists public.open_invites (
+  id           uuid primary key default gen_random_uuid(),
+  player_id    uuid not null references public.profiles(id) on delete cascade,
+  club_id      text not null references public.clubs(id),
+  match_date   date not null,
+  match_time   text not null,
+  court        int  not null default 0,   -- 0 = cualquiera disponible
+  category     text,                      -- categoría que busca; es preferencia, no muro
+  message      text default '',
+  status       text not null default 'abierta'
+               check (status in ('abierta','postulada','cerrada','cancelada')),
+  candidate_id uuid references public.profiles(id) on delete set null,
+  booking_id   uuid references public.bookings(id) on delete set null,
+  created_at   timestamptz not null default now()
+);
+
+-- Un mismo jugador no puede tener dos publicaciones vivas para el mismo bloque.
+create unique index if not exists open_invites_slot_unique
+  on public.open_invites (player_id, match_date, match_time)
+  where status in ('abierta','postulada');
+
+create index if not exists open_invites_estado_idx on public.open_invites (status, match_date);
+
+alter table public.open_invites enable row level security;
+
+grant select, insert, update on public.open_invites to authenticated;
+
+-- Las publicaciones abiertas las ve todo el mundo; las cerradas, solo los suyos.
+drop policy if exists open_invites_read on public.open_invites;
+create policy open_invites_read on public.open_invites
+  for select to authenticated
+  using (
+    status in ('abierta','postulada')
+    or player_id = auth.uid()
+    or candidate_id = auth.uid()
+    or public.is_admin()
+  );
+
+drop policy if exists open_invites_insert on public.open_invites;
+create policy open_invites_insert on public.open_invites
+  for insert to authenticated with check (player_id = auth.uid());
+
+-- Solo para darse de baja: sumarse y confirmar van por funciones.
+drop policy if exists open_invites_cancel on public.open_invites;
+create policy open_invites_cancel on public.open_invites
+  for update to authenticated
+  using (player_id = auth.uid())
+  with check (status = 'cancelada');
+
+-- Sumarse a una publicación: queda a la espera de que el autor confirme.
+create or replace function public.join_invite(p_invite uuid)
+returns public.open_invites
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  inv     public.open_invites;
+  updated public.open_invites;
+  slot_ts timestamptz;
+begin
+  select * into inv from public.open_invites where id = p_invite for update;
+  if inv is null then
+    raise exception 'Esa publicacion ya no existe.';
+  end if;
+  if inv.player_id = auth.uid() then
+    raise exception 'Esa publicacion es tuya.';
+  end if;
+  if inv.status <> 'abierta' then
+    raise exception 'Alguien se te adelanto: esa publicacion ya no esta disponible.';
+  end if;
+
+  slot_ts := (inv.match_date + inv.match_time::time) at time zone 'America/Santiago';
+  if slot_ts < now() then
+    raise exception 'Ese horario ya paso.';
+  end if;
+
+  if exists (
+    select 1 from public.bookings b
+     where b.status = 'confirmada'
+       and b.match_date = inv.match_date and b.match_time = inv.match_time
+       and (b.player_a = auth.uid() or b.player_b = auth.uid())
+  ) then
+    raise exception 'Ya tienes un partido reservado en ese bloque.';
+  end if;
+
+  update public.open_invites
+     set candidate_id = auth.uid(), status = 'postulada'
+   where id = inv.id
+  returning * into updated;
+
+  return updated;
+end $$;
+
+-- El autor acepta o rechaza. Al aceptar se crea la reserva; al rechazar, la
+-- publicacion vuelve a quedar visible para cualquier otro.
+create or replace function public.confirm_invite(
+  p_invite uuid,
+  p_accept boolean
+)
+returns public.open_invites
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  inv      public.open_invites;
+  updated  public.open_invites;
+  cl       public.clubs;
+  chosen   int;
+  n        int;
+  new_book public.bookings;
+  slot_ts  timestamptz;
+begin
+  select * into inv from public.open_invites where id = p_invite for update;
+  if inv is null then
+    raise exception 'Esa publicacion ya no existe.';
+  end if;
+  if inv.player_id <> auth.uid() then
+    raise exception 'Solo quien publico puede confirmar.';
+  end if;
+  if inv.status <> 'postulada' then
+    raise exception 'No hay nadie esperando confirmacion.';
+  end if;
+
+  if not p_accept then
+    update public.open_invites
+       set candidate_id = null, status = 'abierta'
+     where id = inv.id
+    returning * into updated;
+    return updated;
+  end if;
+
+  slot_ts := (inv.match_date + inv.match_time::time) at time zone 'America/Santiago';
+  if slot_ts < now() then
+    update public.open_invites set status = 'cancelada' where id = inv.id;
+    raise exception 'Ese horario ya paso.';
+  end if;
+
+  if exists (
+    select 1 from public.bookings b
+     where b.status = 'confirmada'
+       and b.match_date = inv.match_date and b.match_time = inv.match_time
+       and (b.player_a in (inv.player_id, inv.candidate_id)
+         or b.player_b in (inv.player_id, inv.candidate_id))
+  ) then
+    raise exception 'Uno de los dos ya tiene un partido en ese bloque.';
+  end if;
+
+  select * into cl from public.clubs where id = inv.club_id;
+
+  if inv.court > 0 then
+    if exists (
+      select 1 from public.bookings b
+       where b.status = 'confirmada' and b.club_id = inv.club_id
+         and b.match_date = inv.match_date and b.match_time = inv.match_time
+         and b.court = inv.court
+    ) then
+      raise exception 'La cancha % ya esta reservada en ese bloque.', inv.court;
+    end if;
+    chosen := inv.court;
+  else
+    chosen := null;
+    for n in 1..cl.courts loop
+      if not exists (
+        select 1 from public.bookings b
+         where b.status = 'confirmada' and b.club_id = inv.club_id
+           and b.match_date = inv.match_date and b.match_time = inv.match_time
+           and b.court = n
+      ) then
+        chosen := n;
+        exit;
+      end if;
+    end loop;
+    if chosen is null then
+      raise exception 'Se acabaron las canchas de ese club a esa hora.';
+    end if;
+  end if;
+
+  insert into public.bookings (
+    club_id, court, match_date, match_time, player_a, player_b, ladder
+  ) values (
+    inv.club_id, chosen, inv.match_date, inv.match_time,
+    inv.player_id, inv.candidate_id, false
+  )
+  returning * into new_book;
+
+  update public.open_invites
+     set status = 'cerrada', booking_id = new_book.id
+   where id = inv.id
+  returning * into updated;
+
+  -- Las demas publicaciones de estos dos en el mismo bloque quedan sin efecto.
+  update public.open_invites
+     set status = 'cancelada'
+   where id <> inv.id
+     and status in ('abierta','postulada')
+     and match_date = inv.match_date and match_time = inv.match_time
+     and (player_id in (inv.player_id, inv.candidate_id)
+       or candidate_id in (inv.player_id, inv.candidate_id));
+
+  return updated;
+end $$;
+
+grant execute on function public.join_invite(uuid) to authenticated;
+grant execute on function public.confirm_invite(uuid, boolean) to authenticated;
+
+-- =============================================================================
+-- 12. CAMBIOS EN VIVO
 -- Supabase solo publica los cambios de las tablas que estén en esta publicación.
 -- Sin esto, la app se entera de un desafío nuevo recién al recargar la página.
 -- =============================================================================
@@ -625,5 +839,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.profiles;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.open_invites;
 exception when duplicate_object then null;
 end $$;

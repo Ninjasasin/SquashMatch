@@ -647,6 +647,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <button class="tab active" data-view="inicio">Inicio</button>
     <button class="tab" data-view="solicitudes">Solicitudes <span class="badge" id="reqBadge" style="display:none">0</span></button>
     <button class="tab" data-view="partidos">Mis partidos <span class="badge" id="matchBadge" style="display:none">0</span></button>
+    <button class="tab" data-view="abiertas">Canchas abiertas <span class="badge" id="openBadge" style="display:none">0</span></button>
     <button class="tab" data-view="jugadores">Jugadores</button>
     <button class="tab" data-view="escalerilla">Escalerilla</button>
     <button class="tab" data-view="ranking">Ranking nacional</button>
@@ -681,6 +682,38 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
     <p class="section-title">Noticias del circuito PSA</p>
     <div class="news" id="homeNews"></div>
+  </section>
+
+  <!-- ============ CANCHAS ABIERTAS ============ -->
+  <section class="view" id="view-abiertas">
+    <div class="greet">
+      <div class="greet-main">
+        <h2>¿Quieres jugar?</h2>
+        <p>Publica el día y la hora en que puedes, y cualquiera del circuito se puede
+          sumar. Publicar no toma la cancha: se reserva recién cuando confirmas al rival,
+          y se la lleva la primera pareja que confirma.</p>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="btnNewInvite">Publicar que quiero jugar</button>
+      </div>
+    </div>
+
+    <p class="section-title">Tus publicaciones</p>
+    <div class="list" id="myInvites"></div>
+
+    <div class="filters" style="grid-template-columns:1fr 1fr">
+      <div class="field">
+        <label for="oClub">Club</label>
+        <select id="oClub"></select>
+      </div>
+      <div class="field">
+        <label for="oCat">Categoría</label>
+        <select id="oCat"></select>
+      </div>
+    </div>
+
+    <p class="section-title" id="openTitle">Jugadores buscando rival</p>
+    <div class="list" id="openInvites"></div>
   </section>
 
   <!-- ============ JUGADORES ============ -->
@@ -994,6 +1027,54 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
+<!-- ============ MODAL PUBLICAR ============ -->
+<div class="overlay" id="inviteModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Quiero jugar</h2>
+        <p>Queda visible para el resto hasta que alguien se sume o la des de baja.</p>
+      </div>
+      <button class="x" data-close="inviteModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="ivClub">Club</label>
+        <select id="ivClub"></select>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="ivDate">Fecha</label>
+          <input id="ivDate" type="date">
+          <span class="hint" id="ivDateLabel"></span>
+        </div>
+        <div class="field">
+          <label for="ivTime">Hora</label>
+          <select id="ivTime"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Cancha</label>
+        <div class="courts" id="ivCourts"></div>
+      </div>
+      <div class="field">
+        <label for="ivCat">Rival que buscas</label>
+        <select id="ivCat"></select>
+        <span class="hint">Es una preferencia: cualquiera se puede sumar igual.</span>
+      </div>
+      <div class="field">
+        <label for="ivMsg">Mensaje (opcional)</label>
+        <textarea id="ivMsg" rows="2" placeholder="Ej: partido tranquilo, salgo del trabajo"></textarea>
+      </div>
+      <div class="avail" id="ivAvail"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="inviteModal">Cancelar</button>
+      <button class="btn primary" id="ivSend">Publicar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL RESULTADO ============ -->
 <div class="overlay" id="resultModal">
   <div class="modal">
@@ -1087,7 +1168,7 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    modo que todos los jugadores ven lo mismo.
    ========================================================= */
 let state = {
-  clubs:[], players:[], requests:[], bookings:[], contacts:{},
+  clubs:[], players:[], requests:[], bookings:[], invites:[], contacts:{},
   meId:null, session:null, adminMode:false
 };
 
@@ -1145,12 +1226,23 @@ function mapBooking(row){
 }
 
 /* ---------- Lectura ---------- */
+function mapInvite(row){
+  return {
+    id:row.id, playerId:row.player_id, clubId:row.club_id,
+    date:row.match_date, time:row.match_time, court:row.court || 0,
+    category:row.category || '', msg:row.message || '', status:row.status,
+    candidateId:row.candidate_id, bookingId:row.booking_id,
+    createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
+  };
+}
+
 async function fetchAll(){
-  const [clubs, profiles, challenges, bookings] = await Promise.all([
+  const [clubs, profiles, challenges, bookings, invites] = await Promise.all([
     sb.from('clubs').select('*').order('name'),
     sb.from('profiles').select(PROFILE_COLS),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
-    sb.from('bookings').select('*')
+    sb.from('bookings').select('*'),
+    sb.from('open_invites').select('*').order('match_date')
   ]);
 
   const err = clubs.error || profiles.error || challenges.error || bookings.error;
@@ -1163,6 +1255,13 @@ async function fetchAll(){
   state.players  = profiles.data.map(mapProfile);
   state.requests = challenges.data.map(mapChallenge);
   state.bookings = bookings.data.map(mapBooking);
+  // Si el esquema de canchas abiertas todavia no se corrio, la app sigue andando.
+  if(invites.error){
+    console.warn('Canchas abiertas no disponible:', invites.error.message);
+    state.invites = [];
+  } else {
+    state.invites = invites.data.map(mapInvite);
+  }
   fillClubSelects();
 
   await fetchContacts();
@@ -1445,6 +1544,40 @@ async function cancelBooking(bookingId){
   await refresh();
 }
 
+async function createInvite(clubId, date, time, court, category, msg){
+  const check = checkSlot(clubId, date, time, me().id, me().id, court);
+  if(!check.ok) return { ok:false, reason:check.reason };
+
+  const { error } = await sb.from('open_invites').insert({
+    player_id:me().id, club_id:clubId, match_date:date, match_time:time,
+    court:court || 0, category:category || null, message:(msg || '').trim()
+  });
+  if(error){
+    return { ok:false, reason:error.code === '23505'
+      ? 'Ya tienes una publicación viva para ese bloque.' : error.message };
+  }
+  await refresh();
+  return { ok:true };
+}
+
+async function joinInvite(inviteId){
+  const { error } = await sb.rpc('join_invite', { p_invite:inviteId });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+async function confirmInvite(inviteId, accept){
+  const { error } = await sb.rpc('confirm_invite', { p_invite:inviteId, p_accept:accept });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+async function cancelInvite(inviteId){
+  const { error } = await sb.from('open_invites').update({ status:'cancelada' }).eq('id', inviteId);
+  if(error){ toast(error.message, true); return; }
+  await refresh();
+}
+
 async function reportResult(bookingId, winnerId, sets){
   const partes = String(sets).split('-');
   const { error } = await sb.rpc('report_result', {
@@ -1475,6 +1608,7 @@ function render(){
   renderRequests();
   renderMatches();
   renderProfile();
+  renderInvites();
   renderLadder();
   renderRanking();
   renderCourts();
@@ -1713,6 +1847,95 @@ function renderRanking(){
       '<td class="num">'+st.lost+'</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="7" style="color:var(--ink-faint)">Sin jugadores en esta categoría.</td></tr>';
+}
+
+/* ---------- Canchas abiertas ---------- */
+function invitesLive(){
+  return state.invites.filter(function(i){
+    return (i.status === 'abierta' || i.status === 'postulada') && !isPast(i.date, i.time);
+  });
+}
+
+/** Las que esperan que yo confirme a alguien. */
+function invitesToConfirm(){
+  const mine = me().id;
+  return invitesLive().filter(function(i){
+    return i.playerId === mine && i.status === 'postulada' && i.candidateId;
+  });
+}
+
+function inviteLine(i, modo){
+  const autor = player(i.playerId);
+  const c = club(i.clubId);
+  const cand = i.candidateId ? player(i.candidateId) : null;
+  const quien = modo === 'mia' ? autor : autor;
+
+  let derecha = '';
+  if(modo === 'mia' && i.status === 'abierta'){
+    derecha = '<div class="btn-row"><span class="state pend">esperando rival</span>' +
+      '<button class="btn danger sm" data-cancelinvite="'+i.id+'">Dar de baja</button></div>';
+  } else if(modo === 'mia'){
+    derecha = '<div class="grow" style="min-width:200px">' +
+      '<div class="row-sub"><b>' + esc(cand ? cand.name : 'Un jugador') + '</b> se sumó' +
+      (cand && cand.category ? ' · ' + esc(cand.category) : '') + '</div>' +
+      '<div class="btn-row" style="margin-top:8px">' +
+        '<button class="btn primary sm" data-confirminvite="'+i.id+'">Confirmar y reservar</button>' +
+        '<button class="btn danger sm" data-rejectinvite="'+i.id+'">Rechazar</button>' +
+      '</div></div>';
+  } else if(i.candidateId === me().id){
+    derecha = '<span class="state pend">esperando su confirmación</span>';
+  } else {
+    derecha = '<button class="btn primary sm" data-joininvite="'+i.id+'">Jugar</button>';
+  }
+
+  return '<div class="row' + (modo === 'mia' ? ' mine' : '') + '">' +
+    '<div class="avatar' + (modo === 'mia' ? '' : ' alt') + '">' +
+      esc(initials(quien ? quien.name : '??')) + '</div>' +
+    '<div class="grow">' +
+      '<div class="row-title">' + esc(quien ? quien.name : 'Jugador') +
+        (quien && quien.category ? ' <span class="chip cat">'+esc(quien.category)+'</span>' : '') +
+        (i.category ? ' <span class="chip">busca ' + esc(i.category) + '</span>' : '') + '</div>' +
+      '<div class="row-sub"><b>' + fmtDate(i.date) + ' · ' + i.time + '</b> — ' +
+        esc(c ? c.name : '') + (i.court ? ' · pide la cancha ' + i.court : '') + '</div>' +
+      (i.msg ? '<div class="msg">“' + esc(i.msg) + '”</div>' : '') +
+    '</div>' +
+    derecha +
+  '</div>';
+}
+
+function renderInvites(){
+  const mine = me().id;
+  const vivas = invitesLive();
+
+  const mias = vivas.filter(function(i){ return i.playerId === mine; });
+  $('myInvites').innerHTML = mias.length
+    ? mias.map(function(i){ return inviteLine(i, 'mia'); }).join('')
+    : '<div class="empty">No tienes publicaciones activas. ' +
+      'Publica una hora y deja que el resto se sume.</div>';
+
+  const cl = $('oClub').value, cat = $('oCat').value;
+  let otras = vivas.filter(function(i){ return i.playerId !== mine; });
+  if(cl !== 'todos') otras = otras.filter(function(i){ return i.clubId === cl; });
+  if(cat !== 'todas'){
+    otras = otras.filter(function(i){
+      const a = player(i.playerId);
+      return a && a.category === cat;
+    });
+  }
+  otras.sort(function(a, b){ return slotDate(a.date,a.time) - slotDate(b.date,b.time); });
+
+  $('openTitle').textContent = otras.length
+    ? otras.length + (otras.length === 1 ? ' jugador buscando rival' : ' jugadores buscando rival')
+    : 'Jugadores buscando rival';
+
+  $('openInvites').innerHTML = otras.length
+    ? otras.map(function(i){ return inviteLine(i, 'otra'); }).join('')
+    : '<div class="empty">Nadie ha publicado horarios todavía. Sé el primero.</div>';
+
+  const pend = invitesToConfirm().length;
+  const badge = $('openBadge');
+  badge.textContent = pend;
+  badge.style.display = pend ? '' : 'none';
 }
 
 /* ---------- Escalerilla ---------- */
@@ -2015,6 +2238,26 @@ function buildNotifications(){
     }
   });
 
+  invitesLive().forEach(function(i){
+    const c = club(i.clubId);
+    const cuando = fmtDate(i.date) + ' · ' + i.time + (c ? ' — ' + c.name : '');
+
+    if(i.playerId === mine && i.status === 'postulada' && i.candidateId){
+      const cand = player(i.candidateId);
+      list.push({ tone:'hot', when:i.createdAt,
+        title:(cand ? cand.name : 'Un jugador') + ' se sumó a tu publicación',
+        sub:cuando,
+        actions:'<div class="btn-row">' +
+          '<button class="btn primary sm" data-confirminvite="'+i.id+'">Confirmar y reservar</button>' +
+          '<button class="btn danger sm" data-rejectinvite="'+i.id+'">Rechazar</button></div>' });
+    } else if(i.candidateId === mine && i.status === 'postulada'){
+      const autor = player(i.playerId);
+      list.push({ tone:'', when:i.createdAt,
+        title:'Esperando que ' + (autor ? autor.name.split(' ')[0] : 'el otro jugador') + ' te confirme',
+        sub:cuando });
+    }
+  });
+
   myBookings().forEach(function(b){
     const other = player(b.playerA === mine ? b.playerB : b.playerA);
     const c = club(b.clubId);
@@ -2140,6 +2383,60 @@ function renderHome(){
       '</div>';
     }).join('') +
     '<div class="link-row"><button class="btn sm" data-goto="jugadores">Ver todos los jugadores →</button></div>';
+}
+
+/* ---------- Modal de publicación ---------- */
+let inviteCourt = 0;
+
+function renderInviteCourts(){
+  const c = club($('ivClub').value);
+  if(!c) return;
+  const date = $('ivDate').value, time = $('ivTime').value;
+  const past = date && time ? isPast(date, time) : false;
+  if(inviteCourt && (past || !courtFree(c.id, date, time, inviteCourt))) inviteCourt = 0;
+
+  let html = '<button type="button" class="court-pick' + (inviteCourt === 0 ? ' active' : '') +
+             '" data-ivcourt="0">Cualquiera<small>La primera libre</small></button>';
+  for(let n = 1; n <= c.courts; n++){
+    const libre = !past && courtFree(c.id, date, time, n);
+    html += '<button type="button" class="court-pick' + (inviteCourt === n ? ' active' : '') +
+            (libre ? '' : ' busy') + '"' + (libre ? '' : ' disabled') + ' data-ivcourt="' + n + '">' +
+            'Cancha ' + n + '<small>' + (past ? 'Horario pasado' : (libre ? 'Disponible' : 'Ocupada')) +
+            '</small></button>';
+  }
+  $('ivCourts').innerHTML = html;
+}
+
+function updateInviteAvail(){
+  renderInviteCourts();
+  $('ivDateLabel').textContent = fmtDateLong($('ivDate').value);
+
+  const box = $('ivAvail');
+  const clubId = $('ivClub').value, date = $('ivDate').value, time = $('ivTime').value;
+  const check = checkSlot(clubId, date, time, me().id, me().id, inviteCourt);
+  const c = club(clubId);
+
+  if(check.ok){
+    box.className = 'avail ok';
+    box.innerHTML = '✓ ' + esc(c.name) + ' · ' + fmtDate(date) + ' · ' + time + ' hrs.<br>' +
+      'Publicar no toma la cancha: se reserva cuando confirmes a quien se sume.';
+  } else {
+    box.className = 'avail bad';
+    box.textContent = '✕ ' + check.reason;
+  }
+  $('ivSend').disabled = !check.ok;
+}
+
+function openInviteModal(){
+  inviteCourt = 0;
+  $('ivClub').value = me().clubId || (CLUBS[0] && CLUBS[0].id);
+  const def = defaultSlot();
+  $('ivDate').value = def.date;
+  $('ivTime').value = def.time;
+  $('ivCat').value = '';
+  $('ivMsg').value = '';
+  updateInviteAvail();
+  openModal('inviteModal');
 }
 
 /* =========================================================
@@ -2848,7 +3145,7 @@ function fillSelect(sel, options, firstLabel, firstValue){
 /** Rellena los selectores de club una vez que la base entregó los clubes. */
 function fillClubSelects(){
   const previos = {};
-  ['cfClub','auClub','fClub','cClub','lClub','chClub'].forEach(function(id){
+  ['cfClub','auClub','fClub','cClub','lClub','chClub','ivClub','oClub'].forEach(function(id){
     previos[id] = $(id).value;
   });
 
@@ -2858,6 +3155,8 @@ function fillClubSelects(){
   fillSelect($('cClub'), clubOptions(), null, null);
   fillSelect($('lClub'), clubOptions(), null, null);
   fillSelect($('chClub'), clubOptions(), null, null);
+  fillSelect($('ivClub'), clubOptions(), null, null);
+  fillSelect($('oClub'), clubOptions(), 'Todos los clubes', 'todos');
 
   Object.keys(previos).forEach(function(id){
     if(previos[id] && $(id).querySelector('option[value="' + previos[id] + '"]')){
@@ -2878,12 +3177,15 @@ function initControls(){
   fillSelect($('rCat'), catOptions(), 'Todas las categorías', 'todas');
   fillSelect($('cfCat'), catOptions(), null, null);
   fillSelect($('auCat'), catOptions(), null, null);
+  fillSelect($('oCat'), catOptions(), 'Todas las categorías', 'todas');
+  fillSelect($('ivCat'), catOptions(), 'Cualquiera', '');
+  fillSelect($('ivTime'), SLOTS.map(function(t){ return { value:t, label:t + ' hrs' }; }), null, null);
 
   fillSelect($('chTime'), SLOTS.map(function(t){ return { value:t, label:t + ' hrs' }; }), null, null);
   $('chTime').value = '19:00';
 
   const t = todayISO(), mx = maxISO();
-  ['chDate','cDate'].forEach(function(id){
+  ['chDate','cDate','ivDate'].forEach(function(id){
     const el = $(id);
     el.min = t; el.max = mx; el.value = t;
   });
@@ -2971,6 +3273,29 @@ function bindEvents(){
   });
   $('rCat').addEventListener('change', renderRanking);
   $('lClub').addEventListener('change', renderLadder);
+  ['oClub','oCat'].forEach(function(id){ $(id).addEventListener('change', renderInvites); });
+
+  // Publicación
+  $('btnNewInvite').addEventListener('click', openInviteModal);
+  ['ivClub','ivDate','ivTime'].forEach(function(id){
+    $(id).addEventListener('input', updateInviteAvail);
+  });
+  $('ivCourts').addEventListener('click', function(e){
+    const b = e.target.closest('.court-pick');
+    if(!b || b.disabled) return;
+    inviteCourt = parseInt(b.dataset.ivcourt, 10);
+    updateInviteAvail();
+  });
+  $('ivSend').addEventListener('click', async function(){
+    this.disabled = true;
+    const res = await createInvite($('ivClub').value, $('ivDate').value, $('ivTime').value,
+                                   inviteCourt, $('ivCat').value, $('ivMsg').value);
+    this.disabled = false;
+    if(!res.ok){ toast(res.reason, true); return; }
+    closeModal('inviteModal');
+    activateView('abiertas');
+    toast('Publicado. Cuando alguien se sume, te avisamos para que confirmes.');
+  });
   ['cClub','cDate'].forEach(function(id){ $(id).addEventListener('input', renderCourts); });
 
   // Cierres de modal
@@ -2992,7 +3317,8 @@ function bindEvents(){
   document.addEventListener('click', async function(e){
     const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],' +
       '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],' +
-      '[data-confirmresult],[data-rejectresult]');
+      '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
+      '[data-rejectinvite],[data-cancelinvite]');
     if(!el) return;
     const d = el.dataset;
 
@@ -3029,6 +3355,30 @@ function bindEvents(){
           await cancelBooking(d.cancelbooking);
           toast('Partido cancelado, cancha liberada.');
         }
+      } else if(d.joininvite){
+        const res = await joinInvite(d.joininvite);
+        toast(res.ok
+          ? 'Te sumaste. Queda esperando que confirme quien publicó.'
+          : res.reason, !res.ok);
+      } else if(d.confirminvite){
+        const res = await confirmInvite(d.confirminvite, true);
+        if(!res.ok){ toast(res.reason, true); }
+        else {
+          const inv = state.invites.find(function(x){ return x.id === d.confirminvite; });
+          const bk = inv && state.bookings.find(function(x){ return x.id === inv.bookingId; });
+          const c = bk && club(bk.clubId);
+          toast(bk ? 'Reserva confirmada: ' + (c ? c.name : '') + ', cancha ' + bk.court +
+                     ', ' + fmtDate(bk.date) + ' ' + bk.time + ' hrs.'
+                   : 'Reserva confirmada.');
+        }
+      } else if(d.rejectinvite){
+        const res = await confirmInvite(d.rejectinvite, false);
+        toast(res.ok
+          ? 'Rechazaste a ese jugador. Tu publicación vuelve a quedar visible.'
+          : res.reason, !res.ok);
+      } else if(d.cancelinvite){
+        await cancelInvite(d.cancelinvite);
+        toast('Publicación dada de baja.');
       } else if(d.confirmresult){
         const antes = ladderSnapshot(d.confirmresult);
         const res = await confirmResult(d.confirmresult, true);
