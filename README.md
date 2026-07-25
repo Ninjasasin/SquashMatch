@@ -71,9 +71,9 @@ archivo con doble clic ya no sirve.
     escalerilla, y queda marcado como válido por ella.
   - Si las posiciones cambian entre el envío y la respuesta y el desafío queda fuera de
     rango, caduca indicando el motivo.
-  - El orden inicial es por categoría y luego por ranking nacional; de ahí en adelante lo
-    define la cancha. Al registrarse o cambiarse de club, el jugador entra al último
-    puesto de la escalerilla que corresponde.
+  - **La inscripción es explícita y no depende del club del perfil**: hay botones para
+    unirse y para salir, se entra al último puesto, y un jugador puede estar en varias
+    escalerillas a la vez. Al salir, los de abajo suben un lugar.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
   cupo, e historial con el marcador.
 - **Resultados en dos pasos** — uno de los dos jugadores carga quién ganó y el marcador
