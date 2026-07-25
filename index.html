@@ -57,10 +57,14 @@ input,select,textarea{font-family:inherit}
   background:radial-gradient(circle at 32% 30%, #3a3f38, #101210 70%);
   border:1px solid #3a3f38;position:relative;flex:none;
 }
-.ball::after{
-  content:"";position:absolute;top:7px;left:7px;width:7px;height:7px;border-radius:50%;
-  background:var(--lime);box-shadow:0 0 10px rgba(201,242,74,.8);
+/* Doble punto amarillo: es la pelota de competición. Con un punto la app
+   quedaría delatada como ajena al circuito. */
+.ball::before,.ball::after{
+  content:"";position:absolute;top:10px;width:6px;height:6px;border-radius:50%;
+  background:var(--lime);box-shadow:0 0 8px rgba(201,242,74,.75);
 }
+.ball::before{left:7px}
+.ball::after{left:16px}
 .brand h1{font-size:19px;margin:0;letter-spacing:-.4px;font-weight:700}
 .brand span{display:block;font-size:11px;color:var(--ink-faint);letter-spacing:.9px;text-transform:uppercase;margin-top:1px}
 .who{display:flex;align-items:center;gap:10px}
@@ -934,6 +938,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <div class="field">
         <label for="cDate">Fecha</label>
         <input id="cDate" type="date">
+        <span class="hint" id="cDateLabel"></span>
       </div>
     </div>
     <p class="section-title" id="courtsTitle"></p>
@@ -965,6 +970,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div class="field">
           <label for="chDate">Fecha</label>
           <input id="chDate" type="date">
+          <span class="hint" id="chDateLabel"></span>
         </div>
         <div class="field">
           <label for="chTime">Hora</label>
@@ -1207,6 +1213,13 @@ function player(id){ return state.players.find(function(p){ return p.id === id; 
 function club(id){ return CLUBS.find(function(c){ return c.id === id; }) || null; }
 function me(){ return player(state.meId) || state.players[0]; }
 
+/** El marcador siempre se lee desde el jugador: si perdió 3-1, ve 1-3. */
+function setsFor(sets, gano){
+  if(!sets) return '';
+  const p = String(sets).split('-');
+  return gano ? p[0] + '-' + p[1] : p[1] + '-' + p[0];
+}
+
 function initials(name){
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   const a = parts[0] ? parts[0][0] : '';
@@ -1232,6 +1245,20 @@ function parseISO(iso){
   const p = iso.split('-');
   return new Date(+p[0], +p[1]-1, +p[2]);
 }
+/* El formato del calendario nativo lo decide el navegador, no la página, así que
+   debajo se escribe la fecha completa en palabras para que no quede ninguna duda
+   entre día y mes. */
+const DIAS_LARGO = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const MESES_LARGO = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                     'agosto','septiembre','octubre','noviembre','diciembre'];
+
+function fmtDateLong(iso){
+  if(!iso) return '';
+  const d = parseISO(iso);
+  return DIAS_LARGO[d.getDay()] + ' ' + d.getDate() + ' de ' +
+         MESES_LARGO[d.getMonth()] + ' de ' + d.getFullYear();
+}
+
 function fmtDate(iso){
   const d = parseISO(iso);
   const dias = ['dom','lun','mar','mié','jue','vie','sáb'];
@@ -1606,17 +1633,18 @@ function matchLine(b, past){
     if(b.result){
       const won = b.result.winnerId === mine;
       right = '<span class="state '+(won?'ok':'no')+'">'+(won?'ganado':'perdido')+'</span>' +
-              '<div class="row-sub" style="margin:0">'+esc(b.result.sets)+' en sets</div>';
+              '<div class="row-sub" style="margin:0">'+esc(setsFor(b.result.sets, won))+' en sets</div>';
     } else if(b.reporte && b.reporte.reportedBy === mine){
       const gane = b.reporte.winnerId === mine;
       right = '<div class="court-tag"><small>Esperando a tu rival</small>' +
-              esc((gane ? 'Ganaste ' : 'Perdiste ') + b.reporte.sets) + '</div>';
+              esc((gane ? 'Ganaste ' : 'Perdiste ') + setsFor(b.reporte.sets, gane)) + '</div>';
     } else if(b.reporte){
       const quien = player(b.reporte.reportedBy);
       const ganeYo = b.reporte.winnerId === mine;
       right = '<div class="grow" style="min-width:190px">' +
         '<div class="row-sub"><b>' + esc(quien ? quien.name.split(' ')[0] : 'Tu rival') +
-        '</b> cargó: ' + (ganeYo ? 'ganaste tú' : 'ganó él') + ' por ' + esc(b.reporte.sets) + '</div>' +
+        '</b> cargó: ' + (ganeYo ? 'ganaste tú' : 'ganó él') + ' por ' +
+        esc(setsFor(b.reporte.sets, ganeYo)) + '</div>' +
         '<div class="btn-row" style="margin-top:8px">' +
           '<button class="btn primary sm" data-confirmresult="'+b.id+'">Confirmar</button>' +
           '<button class="btn danger sm" data-rejectresult="'+b.id+'">No fue así</button>' +
@@ -1787,6 +1815,7 @@ function renderCourts(){
   const slots = SLOTS.filter(function(t){ return !isPast(date, t); });
   const hidden = SLOTS.length - slots.length;
 
+  $('cDateLabel').textContent = fmtDateLong(date);
   $('courtsTitle').textContent = c.name + ' · ' + c.courts + ' canchas · ' + fmtDate(date) +
     (hidden ? ' · ' + hidden + (hidden === 1 ? ' bloque pasado oculto' : ' bloques pasados ocultos') : '');
 
@@ -1999,7 +2028,8 @@ function buildNotifications(){
       const ganeYo = b.reporte.winnerId === mine;
       list.push({ tone:'hot', when:t,
         title:name + ' cargó el resultado de su partido',
-        sub:(ganeYo ? 'Dice que ganaste tú' : 'Dice que ganó él') + ' por ' + b.reporte.sets +
+        sub:(ganeYo ? 'Dice que ganaste tú' : 'Dice que ganó él') + ' por ' +
+            setsFor(b.reporte.sets, ganeYo) +
             ' · ' + fmtDate(b.date),
         actions:'<div class="btn-row">' +
           '<button class="btn primary sm" data-confirmresult="'+b.id+'">Confirmar</button>' +
@@ -2070,7 +2100,7 @@ function renderHome(){
             '<div class="mini-name">'+esc(other ? other.name : 'Jugador')+'</div>' +
             '<div class="mini-sub">'+fmtDate(b.date)+' · '+esc(c ? c.name : '')+'</div>' +
           '</div>' +
-          '<div class="mini-score">'+esc(b.result.sets)+'</div>' +
+          '<div class="mini-score">'+esc(setsFor(b.result.sets, won))+'</div>' +
         '</div>';
       }).join('') +
       '<div class="mini" style="border-top:1px solid var(--line-soft)">' +
@@ -2515,6 +2545,7 @@ function renderCourtPicker(){
 function updateAvail(){
   if(!challengeTargetId) return;
   renderCourtPicker();
+  $('chDateLabel').textContent = fmtDateLong($('chDate').value);
 
   const box = $('chAvail');
   const clubId = $('chClub').value;
