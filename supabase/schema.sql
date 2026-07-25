@@ -104,6 +104,30 @@ create table if not exists public.bookings (
   created_at       timestamptz not null default now()
 );
 
+-- Resultado: lo carga un jugador y lo confirma el otro. Se anota por sets, sin
+-- parciales: despues del partido nadie recuerda los games, pero todos saben el 3-1.
+alter table public.bookings
+  add column if not exists reported_by    uuid references public.profiles(id) on delete set null,
+  add column if not exists sets_winner    int,
+  add column if not exists sets_loser     int,
+  add column if not exists result_status  text not null default 'sin_resultado';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'bookings_result_status_chk') then
+    alter table public.bookings add constraint bookings_result_status_chk
+      check (result_status in ('sin_resultado','por_confirmar','confirmado','rechazado'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bookings_sets_chk') then
+    alter table public.bookings add constraint bookings_sets_chk
+      check (
+        (sets_winner is null and sets_loser is null)
+        or (sets_winner = 3 and sets_loser between 0 and 2)
+        or (sets_winner = 2 and sets_loser between 0 and 1)
+      );
+  end if;
+end $$;
+
 -- Esta es la regla que impide la doble reserva. Aunque dos personas acepten un
 -- desafío en el mismo instante, la base de datos deja pasar solo a una.
 create unique index if not exists bookings_slot_unique
@@ -447,12 +471,15 @@ begin
 end $$;
 
 -- =============================================================================
--- 9. REGISTRAR RESULTADO (y mover la escalerilla)
+-- 9. RESULTADO EN DOS PASOS
+-- Un jugador lo carga, el otro lo confirma. La escalerilla se mueve recien al
+-- confirmarse: sin eso, cualquiera podria inventarse una victoria y subir.
 -- =============================================================================
-create or replace function public.register_result(
-  p_booking uuid,
-  p_winner  uuid,
-  p_score   text
+create or replace function public.report_result(
+  p_booking   uuid,
+  p_winner    uuid,
+  p_sets_win  int,
+  p_sets_lose int
 )
 returns public.bookings
 language plpgsql
@@ -460,37 +487,97 @@ security definer
 set search_path = public
 as $$
 declare
-  bk        public.bookings;
-  updated   public.bookings;
-  pos_chal  int;
-  pos_def   int;
-  challenger uuid;
+  bk      public.bookings;
+  updated public.bookings;
 begin
   select * into bk from public.bookings where id = p_booking for update;
   if bk is null then
     raise exception 'Esa reserva no existe.';
   end if;
   if auth.uid() not in (bk.player_a, bk.player_b) then
-    raise exception 'Solo los jugadores del partido pueden registrar el resultado.';
+    raise exception 'Solo los jugadores del partido pueden cargar el resultado.';
   end if;
   if bk.status <> 'confirmada' then
-    raise exception 'El partido está cancelado.';
+    raise exception 'El partido esta cancelado.';
+  end if;
+  if bk.result_status = 'confirmado' then
+    raise exception 'Ese resultado ya fue confirmado.';
+  end if;
+  if bk.result_status = 'por_confirmar' then
+    raise exception 'Ya hay un resultado esperando confirmacion.';
   end if;
   if p_winner not in (bk.player_a, bk.player_b) then
     raise exception 'El ganador debe ser uno de los dos jugadores.';
   end if;
+  if not (
+    (p_sets_win = 3 and p_sets_lose between 0 and 2) or
+    (p_sets_win = 2 and p_sets_lose between 0 and 1)
+  ) then
+    raise exception 'El marcador por sets no es valido.';
+  end if;
 
   update public.bookings
-     set winner_id = p_winner, score = coalesce(p_score, '')
+     set winner_id = p_winner,
+         sets_winner = p_sets_win,
+         sets_loser = p_sets_lose,
+         reported_by = auth.uid(),
+         result_status = 'por_confirmar'
    where id = bk.id
   returning * into updated;
 
-  -- Escalerilla: si gana el desafiante, intercambian posiciones.
+  return updated;
+end $$;
+
+create or replace function public.confirm_result(
+  p_booking uuid,
+  p_accept  boolean
+)
+returns public.bookings
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  bk         public.bookings;
+  updated    public.bookings;
+  challenger uuid;
+  pos_chal   int;
+  pos_def    int;
+begin
+  select * into bk from public.bookings where id = p_booking for update;
+  if bk is null then
+    raise exception 'Esa reserva no existe.';
+  end if;
+  if auth.uid() not in (bk.player_a, bk.player_b) then
+    raise exception 'Solo los jugadores del partido pueden confirmar el resultado.';
+  end if;
+  if bk.result_status <> 'por_confirmar' then
+    raise exception 'No hay un resultado esperando confirmacion.';
+  end if;
+  if bk.reported_by = auth.uid() then
+    raise exception 'El resultado lo tiene que confirmar el rival, no quien lo carga.';
+  end if;
+
+  if not p_accept then
+    update public.bookings
+       set result_status = 'rechazado',
+           winner_id = null, sets_winner = null, sets_loser = null, reported_by = null
+     where id = bk.id
+    returning * into updated;
+    return updated;
+  end if;
+
+  update public.bookings
+     set result_status = 'confirmado'
+   where id = bk.id
+  returning * into updated;
+
+  -- Escalerilla: si gano el desafiante, intercambian posiciones.
   if updated.ladder and not updated.ladder_applied then
     challenger := case when updated.ladder_defender = updated.player_b
                        then updated.player_a else updated.player_b end;
 
-    if p_winner = challenger then
+    if updated.winner_id = challenger then
       set constraints all deferred;
       select ladder_pos into pos_chal from public.profiles where id = challenger;
       select ladder_pos into pos_def  from public.profiles where id = updated.ladder_defender;
@@ -508,9 +595,12 @@ begin
   return updated;
 end $$;
 
+drop function if exists public.register_result(uuid, uuid, text);
+
 -- =============================================================================
 -- 10. PERMISOS DE EJECUCIÓN
 -- =============================================================================
 grant execute on function public.accept_challenge(uuid) to authenticated;
-grant execute on function public.register_result(uuid, uuid, text) to authenticated;
+grant execute on function public.report_result(uuid, uuid, int, int) to authenticated;
+grant execute on function public.confirm_result(uuid, boolean) to authenticated;
 grant execute on function public.contact_of(uuid) to authenticated;

@@ -1004,9 +1004,18 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <select id="rsWinner"></select>
       </div>
       <div class="field">
-        <label for="rsScore">Marcador (opcional)</label>
-        <input id="rsScore" type="text" placeholder="Ej: 3-1 (11-8, 9-11, 11-6, 11-7)">
+        <label for="rsSets">Marcador en sets</label>
+        <select id="rsSets">
+          <option value="3-0">3-0</option>
+          <option value="3-1" selected>3-1</option>
+          <option value="3-2">3-2</option>
+          <option value="2-0">2-0 &middot; al mejor de 3</option>
+          <option value="2-1">2-1 &middot; al mejor de 3</option>
+        </select>
+        <span class="hint">Solo sets: los parciales de cada game no se piden.</span>
       </div>
+      <div class="auth-note">Tu rival tiene que confirmar este resultado. Hasta que lo
+        haga, no cuenta para las estadísticas ni mueve la escalerilla.</div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close="resultModal">Cancelar</button>
@@ -1117,7 +1126,13 @@ function mapBooking(row){
     id:row.id, requestId:row.challenge_id, clubId:row.club_id, court:row.court,
     date:row.match_date, time:row.match_time,
     playerA:row.player_a, playerB:row.player_b, status:row.status,
-    result:row.winner_id ? { winnerId:row.winner_id, score:row.score || '' } : null,
+    // Solo cuenta como resultado el que el rival ya confirmó.
+    result:(row.result_status === 'confirmado' && row.winner_id)
+      ? { winnerId:row.winner_id, sets:row.sets_winner + '-' + row.sets_loser } : null,
+    reporte:(row.result_status === 'por_confirmar')
+      ? { winnerId:row.winner_id, sets:row.sets_winner + '-' + row.sets_loser,
+          reportedBy:row.reported_by } : null,
+    resultStatus:row.result_status || 'sin_resultado',
     ladder:row.ladder ? { defenderId:row.ladder_defender } : null,
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
@@ -1403,10 +1418,20 @@ async function cancelBooking(bookingId){
   await refresh();
 }
 
-async function registerResult(bookingId, winnerId, score){
-  const { error } = await sb.rpc('register_result', {
-    p_booking:bookingId, p_winner:winnerId, p_score:score || ''
+async function reportResult(bookingId, winnerId, sets){
+  const partes = String(sets).split('-');
+  const { error } = await sb.rpc('report_result', {
+    p_booking:bookingId, p_winner:winnerId,
+    p_sets_win:parseInt(partes[0], 10), p_sets_lose:parseInt(partes[1], 10)
   });
+  if(error) return { ok:false, reason:error.message };
+  await refresh();
+  return { ok:true };
+}
+
+/** El rival acepta o rechaza lo que cargó el otro. Recién al aceptar cuenta. */
+async function confirmResult(bookingId, accept){
+  const { error } = await sb.rpc('confirm_result', { p_booking:bookingId, p_accept:accept });
   if(error) return { ok:false, reason:error.message };
   await refresh();
   return { ok:true };
@@ -1581,9 +1606,26 @@ function matchLine(b, past){
     if(b.result){
       const won = b.result.winnerId === mine;
       right = '<span class="state '+(won?'ok':'no')+'">'+(won?'ganado':'perdido')+'</span>' +
-              (b.result.score ? '<div class="row-sub" style="margin:0">'+esc(b.result.score)+'</div>' : '');
+              '<div class="row-sub" style="margin:0">'+esc(b.result.sets)+' en sets</div>';
+    } else if(b.reporte && b.reporte.reportedBy === mine){
+      const gane = b.reporte.winnerId === mine;
+      right = '<div class="court-tag"><small>Esperando a tu rival</small>' +
+              esc((gane ? 'Ganaste ' : 'Perdiste ') + b.reporte.sets) + '</div>';
+    } else if(b.reporte){
+      const quien = player(b.reporte.reportedBy);
+      const ganeYo = b.reporte.winnerId === mine;
+      right = '<div class="grow" style="min-width:190px">' +
+        '<div class="row-sub"><b>' + esc(quien ? quien.name.split(' ')[0] : 'Tu rival') +
+        '</b> cargó: ' + (ganeYo ? 'ganaste tú' : 'ganó él') + ' por ' + esc(b.reporte.sets) + '</div>' +
+        '<div class="btn-row" style="margin-top:8px">' +
+          '<button class="btn primary sm" data-confirmresult="'+b.id+'">Confirmar</button>' +
+          '<button class="btn danger sm" data-rejectresult="'+b.id+'">No fue así</button>' +
+        '</div></div>';
+    } else if(b.resultStatus === 'rechazado'){
+      right = '<div class="btn-row"><span class="state no">rechazado</span>' +
+              '<button class="btn sm" data-result="'+b.id+'">Cargar de nuevo</button></div>';
     } else {
-      right = '<button class="btn sm" data-result="'+b.id+'">Registrar resultado</button>';
+      right = '<button class="btn sm" data-result="'+b.id+'">Cargar resultado</button>';
     }
   } else {
     right = '<div class="court-tag"><small>'+esc(c ? c.comuna : '')+'</small>Cancha '+b.court+'</div>' +
@@ -1953,10 +1995,23 @@ function buildNotifications(){
     if(t > Date.now() && t - Date.now() <= 48 * 3600000){
       list.push({ tone:'hot', when:Date.now(), title:'Juegas ' + dayLabel(b.date) + ' contra ' + name,
         sub:b.time + ' hrs · ' + (c ? c.name : '') + ' · cancha ' + b.court });
-    } else if(isPast(b.date, b.time) && !b.result){
-      list.push({ tone:'', when:t, title:'Registra el resultado de tu partido con ' + name,
+    } else if(isPast(b.date, b.time) && b.reporte && b.reporte.reportedBy !== mine){
+      const ganeYo = b.reporte.winnerId === mine;
+      list.push({ tone:'hot', when:t,
+        title:name + ' cargó el resultado de su partido',
+        sub:(ganeYo ? 'Dice que ganaste tú' : 'Dice que ganó él') + ' por ' + b.reporte.sets +
+            ' · ' + fmtDate(b.date),
+        actions:'<div class="btn-row">' +
+          '<button class="btn primary sm" data-confirmresult="'+b.id+'">Confirmar</button>' +
+          '<button class="btn danger sm" data-rejectresult="'+b.id+'">No fue así</button></div>' });
+    } else if(isPast(b.date, b.time) && b.resultStatus === 'rechazado'){
+      list.push({ tone:'bad', when:t, title:'El resultado con ' + name + ' quedó rechazado',
+        sub:'Pónganse de acuerdo y vuelvan a cargarlo · ' + fmtDate(b.date),
+        actions:'<div class="btn-row"><button class="btn sm" data-result="'+b.id+'">Cargar de nuevo</button></div>' });
+    } else if(isPast(b.date, b.time) && !b.result && !b.reporte){
+      list.push({ tone:'', when:t, title:'Carga el resultado de tu partido con ' + name,
         sub:fmtDate(b.date) + ' · ' + (c ? c.name : ''),
-        actions:'<div class="btn-row"><button class="btn sm" data-result="'+b.id+'">Registrar resultado</button></div>' });
+        actions:'<div class="btn-row"><button class="btn sm" data-result="'+b.id+'">Cargar resultado</button></div>' });
     }
   });
 
@@ -2015,7 +2070,7 @@ function renderHome(){
             '<div class="mini-name">'+esc(other ? other.name : 'Jugador')+'</div>' +
             '<div class="mini-sub">'+fmtDate(b.date)+' · '+esc(c ? c.name : '')+'</div>' +
           '</div>' +
-          '<div class="mini-score">'+esc(b.result.score || (won ? 'Victoria' : 'Derrota'))+'</div>' +
+          '<div class="mini-score">'+esc(b.result.sets)+'</div>' +
         '</div>';
       }).join('') +
       '<div class="mini" style="border-top:1px solid var(--line-soft)">' +
@@ -2489,7 +2544,7 @@ function openResult(bookingId){
   $('rsWinner').innerHTML =
     '<option value="'+b.playerA+'">'+esc(a?a.name:'?')+'</option>' +
     '<option value="'+b.playerB+'">'+esc(bb?bb.name:'?')+'</option>';
-  $('rsScore').value = '';
+  $('rsSets').value = '3-1';
   $('rsSave').dataset.booking = bookingId;
   openModal('resultModal');
 }
@@ -2801,6 +2856,26 @@ function initControls(){
   });
 }
 
+/* Para contar el movimiento de la escalerilla hay que mirar las posiciones
+   antes y después de confirmar: el intercambio lo hace el servidor. */
+function ladderSnapshot(bookingId){
+  const b = state.bookings.find(function(x){ return x.id === bookingId; });
+  if(!b || !b.ladder || !b.reporte) return null;
+  return { clubId:b.clubId, winnerId:b.reporte.winnerId,
+           pos:ladderPos(b.clubId, b.reporte.winnerId) };
+}
+
+function ladderMoveMessage(bookingId, antes){
+  if(!antes) return 'Resultado confirmado.';
+  const ahora = ladderPos(antes.clubId, antes.winnerId);
+  const g = player(antes.winnerId);
+  if(ahora && antes.pos && ahora < antes.pos){
+    return 'Resultado confirmado. ' + (g ? g.name.split(' ')[0] : 'El desafiante') +
+           ' sube del puesto #' + antes.pos + ' al #' + ahora + ' en la escalerilla.';
+  }
+  return 'Resultado confirmado. La escalerilla no se mueve.';
+}
+
 /** Cambia de pestaña. También la usan los accesos directos de Inicio. */
 function activateView(name){
   const view = $('view-' + name);
@@ -2883,7 +2958,8 @@ function bindEvents(){
   // Acciones delegadas
   document.addEventListener('click', async function(e){
     const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],' +
-      '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result]');
+      '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],' +
+      '[data-confirmresult],[data-rejectresult]');
     if(!el) return;
     const d = el.dataset;
 
@@ -2920,6 +2996,16 @@ function bindEvents(){
           await cancelBooking(d.cancelbooking);
           toast('Partido cancelado, cancha liberada.');
         }
+      } else if(d.confirmresult){
+        const antes = ladderSnapshot(d.confirmresult);
+        const res = await confirmResult(d.confirmresult, true);
+        if(!res.ok){ toast(res.reason, true); }
+        else { toast(ladderMoveMessage(d.confirmresult, antes)); }
+      } else if(d.rejectresult){
+        const res = await confirmResult(d.rejectresult, false);
+        toast(res.ok
+          ? 'Resultado rechazado. Cualquiera de los dos puede cargarlo de nuevo.'
+          : res.reason, !res.ok);
       }
     } finally {
       el.disabled = false;
@@ -2952,27 +3038,15 @@ function bindEvents(){
   // Modal resultado
   $('rsSave').addEventListener('click', async function(){
     const bookingId = this.dataset.booking;
-    const b = state.bookings.find(function(x){ return x.id === bookingId; });
-    if(!b) return;
-
     this.disabled = true;
-    const antes = b.ladder ? ladderPos(b.clubId, $('rsWinner').value) : 0;
-    const res = await registerResult(bookingId, $('rsWinner').value, $('rsScore').value.trim());
+    const res = await reportResult(bookingId, $('rsWinner').value, $('rsSets').value);
     this.disabled = false;
-
     if(!res.ok){ toast(res.reason, true); return; }
     closeModal('resultModal');
-
-    if(b.ladder){
-      const ganador = player($('rsWinner').value);
-      const ahora = ladderPos(b.clubId, $('rsWinner').value);
-      toast(ahora && antes && ahora < antes
-        ? 'Resultado guardado. ' + (ganador ? ganador.name : 'El desafiante') +
-          ' sube del puesto #' + antes + ' al #' + ahora + ' en la escalerilla.'
-        : 'Resultado guardado. La escalerilla no se mueve.');
-    } else {
-      toast('Resultado guardado.');
-    }
+    const b = state.bookings.find(function(x){ return x.id === bookingId; });
+    const otro = b ? player(b.playerA === me().id ? b.playerB : b.playerA) : null;
+    toast('Resultado enviado. Queda esperando que ' +
+          (otro ? otro.name.split(' ')[0] : 'tu rival') + ' lo confirme.');
   });
 }
 
