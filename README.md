@@ -36,6 +36,19 @@ archivo con doble clic ya no sirve.
 - **Directorio de jugadores** — búsqueda por nombre o club, filtros por categoría
   (Primera a Cuarta, Damas A/B, Juvenil Sub-19, Máster +40/+50) y por club, con orden
   por ranking nacional, nombre o partidos ganados.
+- **Canchas abiertas** — para cuando tienes la hora y no el rival, que es el desorden
+  que hoy se resuelve a los gritos en el grupo de WhatsApp del club. Publicas club, día,
+  hora y, si quieres, cancha y la categoría de rival que buscas; la publicación queda
+  visible y filtrable para todos. Otro jugador se suma con *Jugar*, la publicación sale
+  de la lista mientras esperas, y tú confirmas o rechazas. Si rechazas, vuelve a quedar
+  visible para cualquier otro; también puedes darla de baja cuando quieras. Al confirmar
+  se crea la reserva.
+  - **Publicar no toma la cancha**: se reserva recién al confirmar, así que la cancha se
+    la lleva la primera pareja que confirma, venga de un desafío o de una publicación.
+  - **No corren por la escalerilla**, para poder jugar contra alguien de tu rango sin
+    arriesgar el puesto. La escalerilla se desafía solo desde su propia sección.
+  - La categoría es una preferencia que se muestra y sirve para filtrar, no un muro:
+    cualquiera se puede sumar.
 - **Desafíos con elección de cancha** — eliges club, fecha, hora y cancha. El selector
   muestra el estado real de cada cancha en ese bloque (disponible u ocupada) y deja pedir
   una en particular, porque los jugadores suelen tener preferencia; también existe la
@@ -108,6 +121,10 @@ Lo que corre en el servidor, porque es donde se puede garantizar:
   escalerilla y cancha, y crea la reserva en una sola transacción. Un índice único
   sobre club, fecha, hora y cancha impide la doble reserva aunque dos personas
   acepten en el mismo segundo.
+- `join_invite()` deja a un jugador postulando a una publicación, y `confirm_invite()`
+  la cierra creando la reserva o la devuelve a la lista si el autor rechaza. Validan lo
+  mismo que `accept_challenge()`: horario, que ninguno de los dos tenga otro partido y la
+  disponibilidad de cancha.
 - `report_result()` recibe el resultado de cualquiera de los dos jugadores y lo deja
   *por confirmar*; `confirm_result()` solo puede ejecutarla el rival, y es la que aplica
   el intercambio de posiciones de la escalerilla.
@@ -118,7 +135,7 @@ Las noticias del circuito son un arreglo de datos al inicio del script, con el t
 redactado en español y el enlace a la fuente. Las miniaturas son ilustraciones SVG
 generadas en el propio archivo: no se usan fotos de prensa, por derechos de autor.
 
-Las tres tablas están en la publicación `supabase_realtime`, así que los desafíos, las
+Las cuatro tablas están en la publicación `supabase_realtime`, así que los desafíos, las
 reservas y los cambios de escalerilla llegan solos a las pantallas abiertas, sin recargar.
 
 La app necesita estar publicada (Vercel) para funcionar: carga la librería de
