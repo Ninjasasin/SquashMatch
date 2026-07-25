@@ -604,3 +604,26 @@ grant execute on function public.accept_challenge(uuid) to authenticated;
 grant execute on function public.report_result(uuid, uuid, int, int) to authenticated;
 grant execute on function public.confirm_result(uuid, boolean) to authenticated;
 grant execute on function public.contact_of(uuid) to authenticated;
+
+-- =============================================================================
+-- 11. CAMBIOS EN VIVO
+-- Supabase solo publica los cambios de las tablas que estén en esta publicación.
+-- Sin esto, la app se entera de un desafío nuevo recién al recargar la página.
+-- =============================================================================
+do $$
+begin
+  alter publication supabase_realtime add table public.challenges;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.bookings;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.profiles;
+exception when duplicate_object then null;
+end $$;
