@@ -8,6 +8,13 @@ la reserva de cancha en el acto.
 
 ## Qué hace
 
+- **Inicio** — pantalla de entrada con el resumen del jugador: sus partidos dentro de
+  los próximos 7 días, un panel de notificaciones derivadas del estado real de la app
+  (desafíos recibidos con aceptar/rechazar en el mismo lugar, desafíos propios aceptados
+  o rechazados, recordatorios de partidos dentro de 48 horas y resultados por registrar),
+  sus últimos 3 partidos con marcador, accesos directos para desafiar y un enlace a las
+  estadísticas completas. El bloque de desafío rápido sugiere tres rivales de su misma
+  categoría o de categorías afines, con el ranking más cercano al suyo.
 - **Directorio de jugadores** — búsqueda por nombre o club, filtros por categoría
   (Primera a Cuarta, Damas A/B, Juvenil Sub-19, Máster +40/+50) y por club, con orden
   por ranking nacional, nombre o partidos ganados.
