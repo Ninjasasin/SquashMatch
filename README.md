@@ -4,28 +4,26 @@ Plataforma para jugadores de squash: busca rivales por categoría y ranking naci
 mándales un desafío para un día, hora y club determinados, y al aceptarlo se genera
 la reserva de cancha en el acto.
 
-**Demo:** abre `index.html` en cualquier navegador. No hay nada que instalar ni compilar.
+**App publicada:** [squash-match.vercel.app](https://squash-match.vercel.app/)
+
+Las cuentas y los partidos viven en Supabase, así que los jugadores se ven entre sí
+desde cualquier dispositivo. La app necesita estar publicada para funcionar: abrir el
+archivo con doble clic ya no sirve.
 
 ## Qué hace
 
-- **Pantalla de entrada** — la app parte pidiendo identificarse:
-  - *Continuar con Google*: acceso **simulado**, rotulado como tal en pantalla. Se escribe
-    el nombre y el correo que Google entregaría y se crea la cuenta.
-  - *Entrar con mi correo*: si el correo ya tiene cuenta, entra directo; si no, pide
-    nombre, categoría y club para crearla.
-  - *Entrar como administrador*: pide la clave del prototipo (`squash2026`, escrita en el
-    código) y habilita el panel de administración.
-  - No hay contraseñas: la identidad es el correo. Guardar contraseñas en `localStorage`
-    sería inseguro y no aporta nada a una demostración.
-  - Cada cuenta recibe un id propio (`usr_…`), queda con su proveedor de origen y entra al
-    último puesto de la escalerilla de su club. La sesión se recuerda al recargar.
-- **Panel de administración** — visible solo en modo admin: totales de cuentas, desafíos
-  pendientes y reservas vigentes, más el listado de todas las cuentas con su id, correo,
-  proveedor, club y puesto en la escalerilla. Desde ahí se puede *entrar como* cualquier
-  usuario para recorrer el prototipo desde su punto de vista, y eliminar las cuentas
-  creadas en la demo (las de ejemplo no se pueden borrar). En modo admin también aparece
-  el selector "Entrar como" de la barra superior; un usuario normal solo ve su propio
-  nombre y el botón de salir.
+- **Pantalla de entrada** — la app parte pidiendo identificarse, con Supabase Auth:
+  - *Continuar con Google*: acceso real por OAuth. Requiere un cliente OAuth de Google
+    Cloud conectado al proyecto y el dominio autorizado.
+  - *Entrar con correo y contraseña* y *Crear una cuenta*: la contraseña se cifra y se
+    valida en el servidor; nunca se guarda en el navegador.
+  - Al entrar por primera vez, la cuenta llega con nombre y correo pero sin categoría ni
+    club: la app pide esos dos datos antes de dejar pasar, y con eso el jugador entra al
+    último puesto de la escalerilla de su club.
+  - La sesión sobrevive a recargas y se cierra desde el botón *Salir*.
+- **Panel de administración** — de solo lectura, visible para las cuentas con
+  `role = 'admin'`: totales de cuentas, desafíos pendientes, reservas vigentes y partidos
+  jugados, más el listado de jugadores con su club, puesto y récord.
 - **Inicio** — pantalla de entrada con el resumen del jugador: sus partidos dentro de
   los próximos 7 días, un panel de notificaciones derivadas del estado real de la app
   (desafíos recibidos con aceptar/rechazar en el mismo lugar, desafíos propios aceptados
@@ -76,50 +74,61 @@ la reserva de cancha en el acto.
     para sus rivales. La disponibilidad aparece en su tarjeta del directorio y el
     contacto se muestra al rival en los partidos ya reservados, para coordinar.
 - **Ranking nacional** por categoría, con el récord de cada jugador.
-- **Registro de jugadores** y selector "Entrar como" para simular a cualquier jugador
-  y ver los dos lados del desafío.
+- **Panel de administración** de solo lectura para las cuentas con `role = 'admin'`:
+  totales de cuentas, desafíos y reservas, y el listado de jugadores registrados.
 
 ## Cómo está hecho
 
-Un solo archivo `index.html` con todo el HTML, CSS y JavaScript en línea. Sin
-dependencias, sin CDN, sin build. La lógica de reservas vive en un IIFE al final del
-archivo:
+La interfaz es un solo archivo `index.html` con el HTML, el CSS y el JavaScript en
+línea. Los datos viven en **Supabase**: base de datos PostgreSQL, autenticación y
+actualizaciones en vivo. El esquema completo está en
+[`supabase/schema.sql`](supabase/schema.sql) y la guía de montaje en
+[`docs/backend-supabase.md`](docs/backend-supabase.md).
 
-- `checkSlot()` valida un bloque para dos jugadores (horario pasado, jugador con otro
-  partido a esa hora, cancha pedida ocupada, canchas agotadas).
-- `courtFree()` / `freeCourt()` / `bookingsAt()` resuelven la disponibilidad real por club,
-  fecha, hora y cancha.
-- `acceptRequest()` es la transacción: revalida y crea la reserva con la cancha asignada.
-- `syncLadders()` / `ladderTargets()` / `canChallengeLadder()` / `applyLadderResult()`
-  sostienen la escalerilla: mantienen cada lista al día con los socios del club, resuelven
-  el rango desafiable y aplican el intercambio de posiciones al cargar un resultado.
+Lo que corre en el navegador:
 
-Los datos se guardan en `localStorage` del navegador, bajo una clave versionada
-(`squashmatch-vN`). Al cambiar la semilla de datos se sube esa versión para que los
-navegadores con una partida guardada carguen los datos nuevos.
+- `fetchAll()` lee clubes, perfiles, desafíos y reservas al iniciar sesión, y se
+  vuelve a leer después de cada acción.
+- `checkSlot()` / `courtFree()` validan la disponibilidad para la interfaz: avisan
+  temprano y evitan viajes inútiles. La decisión real la toma el servidor.
+- `ladderTargets()` / `canChallengeLadder()` resuelven a quién se puede desafiar;
+  las posiciones vienen de la columna `ladder_pos`.
+
+Lo que corre en el servidor, porque es donde se puede garantizar:
+
+- `accept_challenge()` revalida horario, disponibilidad de ambos jugadores, rango de
+  escalerilla y cancha, y crea la reserva en una sola transacción. Un índice único
+  sobre club, fecha, hora y cancha impide la doble reserva aunque dos personas
+  acepten en el mismo segundo.
+- `register_result()` acepta el resultado solo de los jugadores del partido y aplica
+  el intercambio de posiciones de la escalerilla.
+- `contact_of()` entrega correo y teléfono únicamente a quien tenga una reserva
+  confirmada con esa persona; el directorio no los expone.
 
 Las noticias del circuito son un arreglo de datos al inicio del script, con el texto
 redactado en español y el enlace a la fuente. Las miniaturas son ilustraciones SVG
-generadas en el propio archivo: no se usan fotos de prensa, tanto por mantener el archivo
-autocontenido como por los derechos de autor sobre esas imágenes.
+generadas en el propio archivo: no se usan fotos de prensa, por derechos de autor.
+
+La app necesita estar publicada (Vercel) para funcionar: carga la librería de
+Supabase y el acceso con Google exige un dominio autorizado.
 
 ## Limitaciones actuales
 
 1. **La reserva no viaja a un sistema del club.** El motor de canchas es propio y evita
    dobles reservas dentro de la app, pero ningún club de squash en Chile expone hoy una
-   API pública de reservas; integrarlo requiere un acuerdo con cada club. La lógica está
-   aislada en `checkSlot()` / `freeCourt()` para enchufarla cuando exista.
-2. **Los datos son por navegador.** Sirve como demo y para mostrar la idea a clubes,
-   pero para que dos jugadores en celulares distintos se vean se necesita un backend
-   (usuarios, autenticación, notificaciones).
+   API pública de reservas; integrarlo requiere un acuerdo con cada club.
+2. **El resultado lo carga un solo jugador.** Hoy basta con que uno de los dos lo
+   registre para que la escalerilla se mueva. Con gente compitiendo en serio, el rival
+   debería confirmarlo.
+3. **El administrador no puede navegar como otro usuario.** Las reglas de seguridad
+   amarran los datos a quien inició sesión, y suplantar exigiría la clave secreta del
+   proyecto, que nunca puede estar en una página web. El panel de administración es de
+   solo lectura y el rol se asigna a mano en la base (`profiles.role = 'admin'`).
+4. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA
+   2026, Giza), pero están escritos dentro del archivo: no hay una fuente que los
+   actualice sola.
+5. **El plan gratis de Supabase pausa los proyectos** tras una semana sin actividad. Si
+   la app queda sin uso, hay que reactivarla desde el panel antes de una demostración.
 
-3. **El acceso no es autenticación real.** El "Continuar con Google" es una simulación:
-   un acceso real necesita un cliente OAuth registrado en Google Cloud con el dominio
-   autorizado, cargar el script de Google (recursos externos) y un backend que valide el
-   token. La clave de administrador está en el código y las cuentas viven en el navegador,
-   así que cualquiera puede leerlas: sirve para separar roles en la demostración, no para
-   proteger datos. Nadie debería registrarse aquí con datos que le importen.
-4. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA 2026,
-   Giza), pero están escritos dentro del archivo: no hay una fuente que los actualice sola.
-
-Los jugadores son datos de ejemplo, igual que las comunas asignadas a cada club.
+Las comunas asignadas a cada club son de ejemplo. Los jugadores ya no lo son: son
+las cuentas que se registran de verdad.
