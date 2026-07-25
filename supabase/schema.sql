@@ -323,7 +323,8 @@ create policy profiles_update_own on public.profiles
 revoke select on public.profiles from authenticated;
 grant select (
   id, name, category, national_rank, club_id, hand, comuna,
-  playing_since, available_days, preferred_slot, bio, role, ladder_pos, created_at
+  playing_since, available_days, preferred_slot, bio, role, ladder_pos, created_at,
+  rating, rating_matches
 ) on public.profiles to authenticated;
 grant update (
   name, category, national_rank, club_id, hand, phone, comuna,
