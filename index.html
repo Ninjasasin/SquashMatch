@@ -2638,6 +2638,8 @@ async function enterApp(session){
   const ok = await fetchAll();
   if(!ok) return;
 
+  listenForChanges();
+
   if(!profileComplete(me())){
     startAuth('perfil');
     $('authScreen').classList.add('open');
@@ -3091,7 +3093,11 @@ showAuth();
 
 /* Cambios en vivo: si alguien te desafia, acepta o reserva, la vista se
    actualiza sola sin recargar la pagina. */
+let realtimeOn = false;
+
 function listenForChanges(){
+  if(realtimeOn) return;
+  realtimeOn = true;
   sb.channel('squashmatch')
     .on('postgres_changes', { event:'*', schema:'public', table:'challenges' }, refresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'bookings' },   refresh)
@@ -3100,19 +3106,22 @@ function listenForChanges(){
 }
 
 /* La sesion la administra Supabase: sobrevive a recargas y vuelve del rodeo de
-   Google por si sola. */
+   Google por si sola. Las llamadas a la base salen del callback con setTimeout:
+   hacerlas dentro puede dejar la sesion trabada. */
 sb.auth.onAuthStateChange(function(event, session){
-  if(session && !state.meId){
-    enterApp(session).then(listenForChanges);
-  } else if(!session && state.meId){
-    state.meId = null;
-    state.session = null;
-    showAuth();
-  }
+  setTimeout(function(){
+    if(session && !state.meId){
+      enterApp(session);
+    } else if(!session && state.meId){
+      state.meId = null;
+      state.session = null;
+      showAuth();
+    }
+  }, 0);
 });
 
 sb.auth.getSession().then(function(res){
-  if(res.data.session) enterApp(res.data.session).then(listenForChanges);
+  if(res.data.session) enterApp(res.data.session);
 });
 
 })();
