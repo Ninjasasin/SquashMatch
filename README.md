@@ -8,6 +8,24 @@ la reserva de cancha en el acto.
 
 ## Qué hace
 
+- **Pantalla de entrada** — la app parte pidiendo identificarse:
+  - *Continuar con Google*: acceso **simulado**, rotulado como tal en pantalla. Se escribe
+    el nombre y el correo que Google entregaría y se crea la cuenta.
+  - *Entrar con mi correo*: si el correo ya tiene cuenta, entra directo; si no, pide
+    nombre, categoría y club para crearla.
+  - *Entrar como administrador*: pide la clave del prototipo (`squash2026`, escrita en el
+    código) y habilita el panel de administración.
+  - No hay contraseñas: la identidad es el correo. Guardar contraseñas en `localStorage`
+    sería inseguro y no aporta nada a una demostración.
+  - Cada cuenta recibe un id propio (`usr_…`), queda con su proveedor de origen y entra al
+    último puesto de la escalerilla de su club. La sesión se recuerda al recargar.
+- **Panel de administración** — visible solo en modo admin: totales de cuentas, desafíos
+  pendientes y reservas vigentes, más el listado de todas las cuentas con su id, correo,
+  proveedor, club y puesto en la escalerilla. Desde ahí se puede *entrar como* cualquier
+  usuario para recorrer el prototipo desde su punto de vista, y eliminar las cuentas
+  creadas en la demo (las de ejemplo no se pueden borrar). En modo admin también aparece
+  el selector "Entrar como" de la barra superior; un usuario normal solo ve su propio
+  nombre y el botón de salir.
 - **Inicio** — pantalla de entrada con el resumen del jugador: sus partidos dentro de
   los próximos 7 días, un panel de notificaciones derivadas del estado real de la app
   (desafíos recibidos con aceptar/rechazar en el mismo lugar, desafíos propios aceptados
@@ -95,7 +113,13 @@ autocontenido como por los derechos de autor sobre esas imágenes.
    pero para que dos jugadores en celulares distintos se vean se necesita un backend
    (usuarios, autenticación, notificaciones).
 
-3. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA 2026,
+3. **El acceso no es autenticación real.** El "Continuar con Google" es una simulación:
+   un acceso real necesita un cliente OAuth registrado en Google Cloud con el dominio
+   autorizado, cargar el script de Google (recursos externos) y un backend que valide el
+   token. La clave de administrador está en el código y las cuentas viven en el navegador,
+   así que cualquiera puede leerlas: sirve para separar roles en la demostración, no para
+   proteger datos. Nadie debería registrarse aquí con datos que le importen.
+4. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA 2026,
    Giza), pero están escritos dentro del archivo: no hay una fuente que los actualice sola.
 
 Los jugadores son datos de ejemplo, igual que las comunas asignadas a cada club.

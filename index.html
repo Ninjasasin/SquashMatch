@@ -24,6 +24,8 @@
   --font:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
 }
 *{box-sizing:border-box}
+/* Las reglas de display de más abajo pisarían el atributo hidden si no fuera por esto. */
+[hidden]{display:none !important}
 html,body{margin:0;padding:0}
 body{
   background:
@@ -237,6 +239,54 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 }
 .toast.err{border-left-color:var(--red)}
 
+/* ---------- Pantalla de entrada ---------- */
+.auth{
+  display:none;min-height:100vh;align-items:center;justify-content:center;
+  gap:28px;padding:32px 20px;
+}
+.auth.open{display:flex}
+.auth-card{
+  background:linear-gradient(160deg,rgba(201,242,74,.09),transparent 55%),var(--panel);
+  border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);
+  padding:30px;width:100%;max-width:420px;
+}
+.auth-brand{display:flex;align-items:center;gap:11px;margin-bottom:26px}
+.auth-brand h1{font-size:20px;margin:0;letter-spacing:-.4px}
+.auth-brand span{display:block;font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.9px;margin-top:2px}
+.auth-title{font-size:25px;margin:0 0 10px;letter-spacing:-.5px}
+.auth-lead{font-size:14px;color:var(--ink-dim);line-height:1.6;margin:0 0 24px}
+#authChoices .btn{margin-bottom:10px}
+.auth-sep{font-size:12px;color:var(--ink-faint);text-align:center;margin:16px 0 14px}
+#authForm{display:grid;gap:14px}
+#authForm .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#authForm .btn-row{justify-content:flex-end}
+.auth-note{
+  font-size:12.5px;line-height:1.55;color:var(--ink-dim);
+  background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:12px 13px;
+}
+.auth-note b{color:var(--ink)}
+.auth-side{max-width:340px;color:var(--ink-dim)}
+.auth-side h3{font-size:13px;text-transform:uppercase;letter-spacing:1.1px;color:var(--ink-faint);margin:0 0 14px}
+.auth-side ul{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.auth-side li{font-size:13.5px;line-height:1.6;padding-left:16px;position:relative}
+.auth-side li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--lime)}
+.auth-side b{color:var(--ink)}
+.auth-demo{font-size:12px;color:var(--ink-faint);margin-top:22px;line-height:1.6;
+  border-top:1px solid var(--line);padding-top:16px}
+
+/* Sesión en la barra superior */
+.user-chip{
+  display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:99px;padding:7px 13px;
+}
+.user-chip small{color:var(--ink-faint);font-weight:600;font-size:11px}
+.admin-flag{
+  font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;
+  color:var(--amber);background:rgba(255,138,61,.13);border:1px solid rgba(255,138,61,.35);
+  border-radius:99px;padding:5px 10px;
+}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--ink-faint)}
+
 /* ---------- Inicio ---------- */
 .greet{
   background:linear-gradient(135deg,rgba(201,242,74,.12),transparent 60%),var(--panel);
@@ -434,6 +484,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 .save-bar .hint{margin-right:auto;font-size:12.5px;color:var(--ink-faint)}
 .save-bar .hint.dirty{color:var(--amber)}
 
+@media (max-width:900px){
+  .auth{flex-direction:column;justify-content:flex-start;padding:24px 16px 40px}
+  .auth-side{max-width:420px;width:100%}
+}
 @media (max-width:820px){
   .split{grid-template-columns:1fr}
   .home-grid{grid-template-columns:1fr}
@@ -484,10 +538,90 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   .save-bar{flex-wrap:wrap}
   .save-bar .hint{width:100%;margin:0 0 4px}
   .save-bar .btn{flex:1}
+  .auth-card{padding:22px}
+  .auth-title{font-size:22px}
+  #authForm .two{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
+
+<!-- ============ PANTALLA DE ENTRADA ============ -->
+<div id="authScreen" class="auth">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="ball"></div>
+      <div>
+        <h1>SquashMatch</h1>
+        <span>Desafíos y reservas</span>
+      </div>
+    </div>
+
+    <h2 class="auth-title">Entra a la cancha</h2>
+    <p class="auth-lead">Busca rivales de tu categoría, mándales un desafío y la cancha
+      queda reservada apenas lo aceptan.</p>
+
+    <div id="authChoices">
+      <button class="btn primary block" data-auth="google">Continuar con Google</button>
+      <button class="btn block" data-auth="correo">Entrar con mi correo</button>
+      <p class="auth-sep">¿Ya tienes cuenta? Usa el mismo correo y entras directo.</p>
+      <button class="btn ghost block" data-auth="admin">Entrar como administrador</button>
+    </div>
+
+    <form id="authForm" hidden autocomplete="off" novalidate>
+      <div class="auth-note" id="authNote"></div>
+
+      <div class="field" id="fieldEmail">
+        <label for="auEmail">Correo</label>
+        <input id="auEmail" type="email" placeholder="nombre@correo.cl">
+      </div>
+
+      <div class="field" id="fieldName">
+        <label for="auName">Nombre y apellido</label>
+        <input id="auName" type="text" placeholder="Ej: Camila Rojas">
+      </div>
+
+      <div class="two" id="fieldProfile">
+        <div class="field">
+          <label for="auCat">Categoría</label>
+          <select id="auCat"></select>
+        </div>
+        <div class="field">
+          <label for="auClub">Club</label>
+          <select id="auClub"></select>
+        </div>
+      </div>
+
+      <div class="field" id="fieldRank">
+        <label for="auRank">N.º ranking nacional</label>
+        <input id="auRank" type="number" min="1" max="999" placeholder="Opcional">
+        <span class="hint">Si no tienes, déjalo vacío.</span>
+      </div>
+
+      <div class="field" id="fieldAdmin">
+        <label for="auKey">Clave de administrador</label>
+        <input id="auKey" type="text" placeholder="Clave del prototipo">
+      </div>
+
+      <div class="btn-row" style="margin-top:6px">
+        <button type="button" class="btn ghost" id="auBack">Volver</button>
+        <button type="submit" class="btn primary" id="auSubmit">Continuar</button>
+      </div>
+    </form>
+  </div>
+
+  <aside class="auth-side">
+    <h3>Qué puedes hacer</h3>
+    <ul>
+      <li><b>Desafiar por categoría y ranking</b> — encuentras rivales de tu nivel y les propones día, hora y cancha.</li>
+      <li><b>Reservar al instante</b> — cuando el rival acepta, la cancha queda tomada en el acto.</li>
+      <li><b>Competir en la escalerilla</b> — el ranking interno de tu club: desafías hasta tres puestos arriba y, si ganas, te quedas con su lugar.</li>
+      <li><b>Seguir tus estadísticas</b> — efectividad, rachas, rivales frecuentes y tu historial de partidos.</li>
+    </ul>
+    <p class="auth-demo">Prototipo de demostración: las cuentas y los partidos se guardan
+      en este navegador, no en un servidor.</p>
+  </aside>
+</div>
 
 <header class="topbar">
   <div class="topbar-in">
@@ -499,9 +633,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       </div>
     </div>
     <div class="who">
-      <label for="meSelect">Entrar como</label>
+      <span class="admin-flag" id="adminFlag" hidden>Modo admin</span>
+      <span class="user-chip" id="userChip" hidden></span>
+      <label for="meSelect" id="meLabel">Entrar como</label>
       <select id="meSelect"></select>
       <button class="btn sm" id="btnNewPlayer">+ Jugador</button>
+      <button class="btn sm" id="btnLogout">Salir</button>
     </div>
   </div>
   <nav class="tabs" id="tabs">
@@ -513,6 +650,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <button class="tab" data-view="ranking">Ranking nacional</button>
     <button class="tab" data-view="canchas">Canchas</button>
     <button class="tab" data-view="perfil">Mi perfil</button>
+    <button class="tab" data-view="admin" id="tabAdmin" hidden>Admin</button>
   </nav>
 </header>
 
@@ -746,6 +884,22 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <div class="list" id="ladderList"></div>
   </section>
 
+  <!-- ============ ADMIN ============ -->
+  <section class="view" id="view-admin">
+    <div class="ladder-rules">
+      <h3>Panel de administración</h3>
+      <p>Acá ves todas las cuentas de la app y puedes entrar como cualquiera de ellas para
+        recorrer el prototipo desde su punto de vista. Las cuentas creadas desde la pantalla
+        de entrada aparecen marcadas con su proveedor.</p>
+      <p style="margin-top:10px"><b>Esto no es seguridad real:</b> la clave de administrador
+        y todas las cuentas viven en este navegador, así que cualquiera con acceso al código
+        puede leerlas. Sirve para demostrar el producto, no para proteger datos.</p>
+    </div>
+    <div class="tiles" id="adminTiles"></div>
+    <p class="section-title">Cuentas registradas</p>
+    <div class="list" id="adminUsers"></div>
+  </section>
+
   <!-- ============ RANKING ============ -->
   <section class="view" id="view-ranking">
     <div class="filters" style="grid-template-columns:1fr">
@@ -939,7 +1093,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
    ========================================================= */
 /* Al cambiar la semilla de datos se sube la versión: así los navegadores que ya tenían
    una partida guardada cargan el historial nuevo en vez de quedarse con el antiguo. */
-const STORE_KEY = 'squashmatch-v3';
+const STORE_KEY = 'squashmatch-v4';
 const CATEGORIES = ['Primera','Segunda','Tercera','Cuarta','Damas A','Damas B','Juvenil Sub-19','Máster +40','Máster +50'];
 const SLOTS = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
 const HORIZON_DAYS = 45; // ventana de agenda hacia adelante
@@ -1034,7 +1188,9 @@ function uid(prefix){
 
 function seed(){
   const players = SEED_PLAYERS.map(function(p, i){
-    return { id:'p'+(i+1), name:p[0], category:p[1], rank:p[2], clubId:p[3], hand:p[4] };
+    // provider 'demo' = jugador de ejemplo: no tiene correo ni se puede eliminar.
+    return { id:'p'+(i+1), name:p[0], category:p[1], rank:p[2], clubId:p[3], hand:p[4],
+             provider:'demo', email:'' };
   });
   const bookings = SEED_HISTORY.map(function(h, i){
     const d = new Date();
@@ -1045,7 +1201,8 @@ function seed(){
       status:'confirmada', result:{ winnerId:h[5], score:h[6] }, createdAt:Date.now()
     };
   });
-  return { players:players, requests:[], bookings:bookings, meId:'p2' };
+  return { players:players, requests:[], bookings:bookings, meId:'p2',
+           session:null, adminMode:false };
 }
 
 function load(){
@@ -1356,6 +1513,8 @@ function cancelBooking(bookingId){
    ========================================================= */
 function render(){
   renderMeSelect();
+  renderSession();
+  renderAdmin();
   renderHome();
   renderPlayers();
   renderRequests();
@@ -2444,6 +2603,300 @@ function openResult(bookingId){
 }
 
 /* =========================================================
+   SESIÓN Y CUENTAS
+   ---------------------------------------------------------
+   Prototipo: las cuentas viven en localStorage y no hay contraseñas. La identidad
+   es el correo, y el acceso "con Google" está simulado y rotulado como tal: un
+   Google real necesita un cliente OAuth, cargar su script y un backend que valide
+   el token, nada de lo cual existe en un archivo autocontenido.
+   ========================================================= */
+const ADMIN_KEY = 'squash2026';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+let authMode = null;      // 'google' | 'correo' | 'admin'
+let authCreating = false; // true cuando el formulario está creando una cuenta nueva
+
+function findByEmail(email){
+  const e = String(email || '').trim().toLowerCase();
+  if(!e) return null;
+  return state.players.find(function(p){ return (p.email || '').toLowerCase() === e; }) || null;
+}
+
+function isAdmin(){ return !!state.adminMode; }
+
+function showAuth(){
+  $('authScreen').classList.add('open');
+  document.querySelector('.topbar').hidden = true;
+  document.querySelector('main').hidden = true;
+  authReset();
+}
+
+function showApp(){
+  $('authScreen').classList.remove('open');
+  document.querySelector('.topbar').hidden = false;
+  document.querySelector('main').hidden = false;
+  render();
+  activateView('inicio');
+}
+
+function startSession(playerId, admin){
+  state.session = { playerId:playerId, at:Date.now() };
+  state.adminMode = !!admin;
+  state.meId = playerId;
+  save();
+  showApp();
+}
+
+function logout(){
+  state.session = null;
+  state.adminMode = false;
+  save();
+  showAuth();
+  toast('Cerraste sesión.');
+}
+
+function createAccount(data){
+  const p = {
+    id: uid('usr'),
+    name: data.name,
+    email: data.email.toLowerCase(),
+    provider: data.provider,
+    category: data.category,
+    clubId: data.clubId,
+    rank: data.rank || null,
+    hand: 'Diestro',
+    createdAt: Date.now()
+  };
+  state.players.push(p);
+  syncLadders();
+  save();
+  return p;
+}
+
+/* ---------- Formulario de la pantalla de entrada ---------- */
+function authReset(){
+  authMode = null;
+  authCreating = false;
+  $('authChoices').hidden = false;
+  $('authForm').hidden = true;
+  ['auEmail','auName','auRank','auKey'].forEach(function(id){ $(id).value = ''; });
+}
+
+function authShowFields(opts){
+  $('fieldEmail').hidden   = !opts.email;
+  $('fieldName').hidden    = !opts.name;
+  $('fieldProfile').hidden = !opts.profile;
+  $('fieldRank').hidden    = !opts.profile;
+  $('fieldAdmin').hidden   = !opts.admin;
+}
+
+function startAuth(mode){
+  authMode = mode;
+  authCreating = false;
+  $('authChoices').hidden = true;
+  $('authForm').hidden = false;
+
+  if(mode === 'admin'){
+    authShowFields({ admin:true });
+    $('authNote').innerHTML = '<b>Acceso de administrador.</b> Te deja recorrer la app como ' +
+      'cualquier usuario de prueba. La clave está escrita en el código: sirve para separar ' +
+      'roles en la demostración, no para proteger nada.';
+    $('auSubmit').textContent = 'Entrar como admin';
+    setTimeout(function(){ $('auKey').focus(); }, 30);
+    return;
+  }
+
+  if(mode === 'google'){
+    authShowFields({ email:true, name:true });
+    $('authNote').innerHTML = '<b>Acceso con Google simulado.</b> En el prototipo escribes ' +
+      'tú el nombre y el correo que Google entregaría. Nunca pedimos tu contraseña, y esto ' +
+      'no se conecta con tu cuenta real de Google.';
+    $('auSubmit').textContent = 'Continuar';
+    setTimeout(function(){ $('auEmail').focus(); }, 30);
+    return;
+  }
+
+  authShowFields({ email:true });
+  $('authNote').innerHTML = 'Escribe tu correo. Si ya tienes cuenta entras directo; ' +
+    'si es la primera vez, te pedimos un par de datos para armar tu perfil.';
+  $('auSubmit').textContent = 'Continuar';
+  setTimeout(function(){ $('auEmail').focus(); }, 30);
+}
+
+/** Segundo paso: completar el perfil de una cuenta nueva. */
+function authAskProfile(email, name){
+  authCreating = true;
+  authShowFields({ email:true, name:true, profile:true });
+  $('auEmail').value = email;
+  if(name) $('auName').value = name;
+  $('authNote').innerHTML = '<b>Cuenta nueva.</b> Completa tu perfil para entrar al ' +
+    'directorio y a la escalerilla de tu club. Todo esto lo puedes editar después en Mi perfil.';
+  $('auSubmit').textContent = 'Crear mi cuenta';
+  setTimeout(function(){ $((name ? 'auCat' : 'auName')).focus(); }, 30);
+}
+
+function submitAuth(){
+  // --- Administrador ---
+  if(authMode === 'admin'){
+    if($('auKey').value.trim() !== ADMIN_KEY){
+      toast('Esa clave no es la del prototipo.', true);
+      return;
+    }
+    const first = state.players[0];
+    startSession(state.meId || (first && first.id), true);
+    toast('Entraste como administrador. Puedes recorrer la app como cualquier usuario.');
+    return;
+  }
+
+  const email = $('auEmail').value.trim();
+  if(!EMAIL_RE.test(email)){
+    toast('Escribe un correo válido.', true);
+    $('auEmail').focus();
+    return;
+  }
+
+  // --- Cuenta existente ---
+  const found = findByEmail(email);
+  if(found && !authCreating){
+    startSession(found.id, false);
+    toast('Hola de nuevo, ' + found.name.split(' ')[0] + '.');
+    return;
+  }
+  if(found && authCreating){
+    toast('Ese correo ya tiene una cuenta. Vuelve y entra con él.', true);
+    return;
+  }
+
+  const name = $('auName').value.trim();
+
+  // --- Primer paso de una cuenta nueva ---
+  if(!authCreating){
+    authAskProfile(email, name);
+    return;
+  }
+
+  // --- Creación ---
+  if(name.length < 3){
+    toast('Escribe tu nombre completo.', true);
+    $('auName').focus();
+    return;
+  }
+  const rank = parseInt($('auRank').value, 10);
+  if($('auRank').value !== '' && (!isFinite(rank) || rank < 1 || rank > 999)){
+    toast('El ranking debe ser un número entre 1 y 999.', true);
+    $('auRank').focus();
+    return;
+  }
+
+  const p = createAccount({
+    name:name, email:email, provider:(authMode === 'google' ? 'Google' : 'Correo'),
+    category:$('auCat').value, clubId:$('auClub').value,
+    rank:($('auRank').value !== '' ? rank : null)
+  });
+
+  startSession(p.id, false);
+  const cl = club(p.clubId);
+  toast('¡Cuenta creada! Entras al puesto #' + ladderPos(p.clubId, p.id) +
+        ' de la escalerilla de ' + (cl ? cl.name : 'tu club') + '.');
+}
+
+/* ---------- Barra superior según la sesión ---------- */
+function renderSession(){
+  const admin = isAdmin();
+  const p = me();
+
+  $('adminFlag').hidden = !admin;
+  $('tabAdmin').hidden = !admin;
+  $('meLabel').hidden = !admin;
+  $('meSelect').hidden = !admin;
+  $('btnNewPlayer').hidden = !admin;
+  $('userChip').hidden = admin;
+
+  if(!admin && p){
+    const cl = club(p.clubId);
+    $('userChip').innerHTML = esc(p.name) + ' <small>' + esc(cl ? cl.name : '') + '</small>';
+  }
+}
+
+/* ---------- Panel de administración ---------- */
+function renderAdmin(){
+  if(!isAdmin()) return;
+
+  const creadas = state.players.filter(function(p){ return p.provider && p.provider !== 'demo'; });
+  const pendientes = state.requests.filter(function(r){ return r.status === 'pendiente'; }).length;
+  const reservas = state.bookings.filter(function(b){
+    return b.status === 'confirmada' && !isPast(b.date, b.time);
+  }).length;
+
+  $('adminTiles').innerHTML =
+    tile(state.players.length, 'Cuentas totales', 'Incluye los jugadores de ejemplo') +
+    tile(creadas.length, 'Cuentas creadas', 'Registradas desde la pantalla de entrada', creadas.length ? 'good' : '') +
+    tile(pendientes, 'Desafíos pendientes', 'En toda la app') +
+    tile(reservas, 'Reservas vigentes', 'Partidos por jugar');
+
+  const orden = state.players.slice().sort(function(a, b){
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+
+  $('adminUsers').innerHTML = orden.map(function(p){
+    const cl = club(p.clubId);
+    const pos = ladderPos(p.clubId, p.id);
+    const esActual = p.id === me().id;
+    const deDemo = !p.provider || p.provider === 'demo';
+
+    return '<div class="row' + (esActual ? ' mine' : '') + '">' +
+      '<div class="avatar' + (esActual ? '' : ' alt') + '">' + esc(initials(p.name)) + '</div>' +
+      '<div class="grow">' +
+        '<div class="row-title">' + esc(p.name) +
+          ' <span class="chip cat">' + esc(p.category) + '</span>' +
+          ' <span class="chip">' + esc(deDemo ? 'ejemplo' : p.provider) + '</span></div>' +
+        '<div class="row-sub">' + esc(p.email || 'sin correo · cuenta de ejemplo') +
+          ' — ' + esc(cl ? cl.name : 'sin club') + (pos ? ' · puesto #' + pos : '') + '</div>' +
+        '<div class="row-sub mono">' + esc(p.id) +
+          (p.createdAt ? ' · creada el ' + fmtDate(isoOf(new Date(p.createdAt))) : '') + '</div>' +
+      '</div>' +
+      (esActual
+        ? '<span class="state ok">estás navegando como esta cuenta</span>'
+        : '<div class="btn-row">' +
+            '<button class="btn primary sm" data-impersonate="' + p.id + '">Entrar como</button>' +
+            (deDemo ? '' : '<button class="btn danger sm" data-delaccount="' + p.id + '">Eliminar</button>') +
+          '</div>') +
+    '</div>';
+  }).join('');
+}
+
+function impersonate(id){
+  const p = player(id);
+  if(!p) return;
+  state.meId = id;
+  setDirty(false);
+  save();
+  render();
+  toast('Estás navegando como ' + p.name + '.');
+}
+
+/** Borra una cuenta creada en la demo, junto con sus desafíos y reservas futuras. */
+function deleteAccount(id){
+  const p = player(id);
+  if(!p || !p.provider || p.provider === 'demo') return;
+
+  state.requests = state.requests.filter(function(r){ return r.fromId !== id && r.toId !== id; });
+  state.bookings.forEach(function(b){
+    if((b.playerA === id || b.playerB === id) && !isPast(b.date, b.time)) b.status = 'cancelada';
+  });
+  state.players = state.players.filter(function(x){ return x.id !== id; });
+  syncLadders();
+
+  if(state.meId === id){
+    const first = state.players[0];
+    state.meId = first ? first.id : null;
+  }
+  save();
+  render();
+  toast('Cuenta de ' + p.name + ' eliminada.');
+}
+
+/* =========================================================
    TOAST
    ========================================================= */
 let toastTimer = null;
@@ -2477,6 +2930,8 @@ function initControls(){
   fillSelect($('npCat'), catOptions(), null, null);
   fillSelect($('cfCat'), catOptions(), null, null);
   fillSelect($('cfClub'), clubOptions(), null, null);
+  fillSelect($('auCat'), catOptions(), null, null);
+  fillSelect($('auClub'), clubOptions(), null, null);
   fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
   fillSelect($('cClub'), clubOptions(), null, null);
   fillSelect($('lClub'), clubOptions(), null, null);
@@ -2515,6 +2970,18 @@ function activateProfilePane(pane){
 }
 
 function bindEvents(){
+  // Pantalla de entrada
+  $('authChoices').addEventListener('click', function(e){
+    const b = e.target.closest('[data-auth]');
+    if(b) startAuth(b.dataset.auth);
+  });
+  $('authForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    submitAuth();
+  });
+  $('auBack').addEventListener('click', authReset);
+  $('btnLogout').addEventListener('click', logout);
+
   // Tabs
   $('tabs').addEventListener('click', function(e){
     const tab = e.target.closest('.tab');
@@ -2571,10 +3038,18 @@ function bindEvents(){
 
   // Acciones delegadas
   document.addEventListener('click', function(e){
-    const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result]');
+    const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],[data-impersonate],[data-delaccount]');
     if(!el) return;
     const d = el.dataset;
 
+    if(d.impersonate){ impersonate(d.impersonate); return; }
+    if(d.delaccount){
+      const p = player(d.delaccount);
+      if(p && confirm('¿Eliminar la cuenta de ' + p.name + '? Se cancelan sus partidos por jugar.')){
+        deleteAccount(d.delaccount);
+      }
+      return;
+    }
     if(d.news){ openNews(d.news); return; }
     if(d.ladderChallenge){ openChallenge(d.ladderChallenge, d.ladderClub); return; }
     if(d.goto){
@@ -2686,7 +3161,15 @@ syncLadders();      // arma las escalerillas la primera vez y las mantiene al d�
 initControls();
 bindEvents();
 renderNews();
-render();
+
+// Sin sesión se muestra la pantalla de entrada; con sesión se entra derecho a la app.
+if(state.session && player(state.session.playerId)){
+  state.meId = state.session.playerId;
+  showApp();
+} else {
+  state.session = null;
+  showAuth();
+}
 
 })();
 </script>
