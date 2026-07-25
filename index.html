@@ -563,9 +563,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
     <div id="authChoices">
       <button class="btn primary block" data-auth="google">Continuar con Google</button>
-      <button class="btn block" data-auth="correo">Entrar con mi correo</button>
-      <p class="auth-sep">¿Ya tienes cuenta? Usa el mismo correo y entras directo.</p>
-      <button class="btn ghost block" data-auth="admin">Entrar como administrador</button>
+      <button class="btn block" data-auth="correo">Entrar con correo y contraseña</button>
+      <p class="auth-sep">¿Primera vez acá?</p>
+      <button class="btn ghost block" data-auth="registro">Crear una cuenta</button>
     </div>
 
     <form id="authForm" hidden autocomplete="off" novalidate>
@@ -574,6 +574,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <div class="field" id="fieldEmail">
         <label for="auEmail">Correo</label>
         <input id="auEmail" type="email" placeholder="nombre@correo.cl">
+      </div>
+
+      <div class="field" id="fieldPass">
+        <label for="auPass">Contraseña</label>
+        <input id="auPass" type="password" placeholder="Al menos 8 caracteres">
       </div>
 
       <div class="field" id="fieldName">
@@ -596,11 +601,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <label for="auRank">N.º ranking nacional</label>
         <input id="auRank" type="number" min="1" max="999" placeholder="Opcional">
         <span class="hint">Si no tienes, déjalo vacío.</span>
-      </div>
-
-      <div class="field" id="fieldAdmin">
-        <label for="auKey">Clave de administrador</label>
-        <input id="auKey" type="text" placeholder="Clave del prototipo">
       </div>
 
       <div class="btn-row" style="margin-top:6px">
@@ -633,11 +633,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       </div>
     </div>
     <div class="who">
-      <span class="admin-flag" id="adminFlag" hidden>Modo admin</span>
-      <span class="user-chip" id="userChip" hidden></span>
-      <label for="meSelect" id="meLabel">Entrar como</label>
-      <select id="meSelect"></select>
-      <button class="btn sm" id="btnNewPlayer">+ Jugador</button>
+      <span class="admin-flag" id="adminFlag" hidden>Admin</span>
+      <span class="user-chip" id="userChip"></span>
       <button class="btn sm" id="btnLogout">Salir</button>
     </div>
   </div>
@@ -990,53 +987,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
-<!-- ============ MODAL NUEVO JUGADOR ============ -->
-<div class="overlay" id="playerModal">
-  <div class="modal">
-    <div class="modal-head">
-      <div>
-        <h2>Registrar jugador</h2>
-        <p>Se suma al directorio y puede desafiar y ser desafiado.</p>
-      </div>
-      <button class="x" data-close="playerModal">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="field">
-        <label for="npName">Nombre y apellido</label>
-        <input id="npName" type="text" placeholder="Ej: Camila Rojas" autocomplete="off">
-      </div>
-      <div class="two">
-        <div class="field">
-          <label for="npCat">Categoría</label>
-          <select id="npCat"></select>
-        </div>
-        <div class="field">
-          <label for="npRank">N.º ranking nacional</label>
-          <input id="npRank" type="number" min="1" max="999" placeholder="Opcional">
-          <span class="hint">Déjalo vacío si aún no tiene.</span>
-        </div>
-      </div>
-      <div class="two">
-        <div class="field">
-          <label for="npClub">Club habitual</label>
-          <select id="npClub"></select>
-        </div>
-        <div class="field">
-          <label for="npHand">Mano hábil</label>
-          <select id="npHand">
-            <option>Diestro</option>
-            <option>Zurdo</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn ghost" data-close="playerModal">Cancelar</button>
-      <button class="btn primary" id="npSave">Registrar</button>
-    </div>
-  </div>
-</div>
-
 <!-- ============ MODAL RESULTADO ============ -->
 <div class="overlay" id="resultModal">
   <div class="modal">
@@ -1084,140 +1034,147 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
 <div id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script>
 (function(){
 'use strict';
 
 /* =========================================================
+   CONEXIÓN CON SUPABASE
+   ---------------------------------------------------------
+   Ambos valores son públicos por diseño: van escritos en la página y cualquiera
+   puede leerlos. Lo que protege los datos son las reglas de seguridad de la base
+   (RLS) definidas en supabase/schema.sql, no el secreto de esta clave.
+   ========================================================= */
+const SUPABASE_URL = 'https://zlhkjutsedsrpljbmuki.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Cvr-Dfet4n0XqeIRNg2ywQ_WLMtEj1v';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* =========================================================
    CONSTANTES
    ========================================================= */
-/* Al cambiar la semilla de datos se sube la versión: así los navegadores que ya tenían
-   una partida guardada cargan el historial nuevo en vez de quedarse con el antiguo. */
-const STORE_KEY = 'squashmatch-v4';
 const CATEGORIES = ['Primera','Segunda','Tercera','Cuarta','Damas A','Damas B','Juvenil Sub-19','Máster +40','Máster +50'];
 const SLOTS = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
 const HORIZON_DAYS = 45; // ventana de agenda hacia adelante
 
-const CLUBS = [
-  { id:'c1', name:'Club Sirio',      comuna:'Las Condes',  courts:2 },
-  { id:'c2', name:'Santiago Squash', comuna:'Providencia', courts:2 }
-];
-
-const SEED_PLAYERS = [
-  ['Matías Fuentes','Primera',3,'c2','Diestro'],
-  ['Ignacio Zúñiga','Segunda',18,'c1','Diestro'],
-  ['Cristóbal Herrera','Primera',1,'c2','Zurdo'],
-  ['Rodrigo Vera','Primera',7,'c1','Diestro'],
-  ['Felipe Cárcamo','Segunda',12,'c2','Diestro'],
-  ['Sebastián Rojas','Segunda',24,'c1','Zurdo'],
-  ['Tomás Aguilera','Tercera',41,'c2','Diestro'],
-  ['Andrés Molina','Tercera',37,'c1','Diestro'],
-  ['Joaquín Silva','Tercera',52,'c1','Diestro'],
-  ['Pablo Navarrete','Cuarta',68,'c2','Zurdo'],
-  ['Diego Contreras','Cuarta',74,'c2','Diestro'],
-  ['Camila Rojas','Damas A',2,'c1','Diestro'],
-  ['Fernanda Lagos','Damas A',5,'c1','Zurdo'],
-  ['Antonia Pérez','Damas B',14,'c2','Diestro'],
-  ['Valentina Muñoz','Damas B',21,'c1','Diestro'],
-  ['Benjamín Torres','Juvenil Sub-19',4,'c2','Diestro'],
-  ['Lucas Ibáñez','Juvenil Sub-19',9,'c1','Diestro'],
-  ['Jorge Salazar','Máster +40',6,'c1','Diestro'],
-  ['Marcelo Díaz','Máster +40',11,'c2','Zurdo'],
-  ['Patricio Reyes','Máster +50',3,'c2','Diestro']
-];
+/* Los clubes ahora vienen de la base de datos; se llena al cargar. */
+let CLUBS = [];
 
 const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 
-/* Partidos ya jugados, para que el perfil y el ranking no partan en blanco.
-   Formato: [díasAtrás, hora, club, jugadorA, jugadorB, ganador, marcador]
-   Los días son distintos entre sí para que ninguna reserva histórica choque de cancha. */
-const SEED_HISTORY = [
-  /* --- Temporada de Ignacio Zúñiga (p2): 26 partidos en los últimos 6 meses --- */
-  // Julio: viene ganando tres seguidos
-  [2,  '19:00','c1','p2','p5', 'p2','3-1 (11-8, 9-11, 11-6, 11-7)'],
-  [5,  '20:00','c1','p2','p6', 'p2','3-0 (11-7, 11-9, 11-5)'],
-  [9,  '19:00','c2','p2','p7', 'p2','3-2 (11-9, 8-11, 11-6, 9-11, 11-8)'],
-  [14, '20:00','c2','p4','p2', 'p4','3-1 (11-9, 7-11, 11-8, 11-6)'],
-  [20, '19:00','c1','p2','p9', 'p2','3-1 (11-5, 11-7, 8-11, 11-9)'],
-  // Junio
-  [27, '21:00','c1','p2','p1', 'p1','0-3 (6-11, 8-11, 9-11)'],
-  [31, '19:00','c2','p2','p5', 'p2','3-2 (9-11, 11-8, 11-7, 6-11, 11-9)'],
-  [35, '18:00','c1','p2','p10','p2','3-0 (11-4, 11-7, 11-6)'],
-  [40, '20:00','c1','p6','p2', 'p6','3-2 (11-7, 9-11, 11-9, 8-11, 12-10)'],
-  [45, '19:00','c2','p2','p4', 'p4','3-1 (8-11, 11-9, 11-7, 11-8)'],
-  [50, '18:00','c2','p2','p7', 'p2','3-1 (11-6, 9-11, 11-8, 11-5)'],
-  // Mayo
-  [58, '19:00','c1','p2','p5', 'p2','3-1 (11-9, 11-7, 7-11, 11-8)'],
-  [66, '20:00','c2','p3','p2', 'p3','3-0 (11-5, 11-8, 11-6)'],
-  [72, '19:00','c1','p2','p9', 'p2','3-0 (11-8, 11-6, 11-9)'],
-  [80, '21:00','c2','p2','p6', 'p2','3-2 (11-8, 7-11, 11-9, 9-11, 11-7)'],
-  // Abril
-  [88, '18:00','c1','p2','p10','p2','3-1 (11-7, 11-9, 8-11, 11-6)'],
-  [95, '19:00','c1','p2','p4', 'p2','3-2 (9-11, 11-8, 11-6, 8-11, 11-9)'],
-  [101,'20:00','c2','p7','p2', 'p7','3-2 (11-9, 8-11, 11-7, 9-11, 11-8)'],
-  [108,'19:00','c2','p5','p2', 'p5','3-1 (11-6, 9-11, 11-8, 11-7)'],
-  [113,'18:00','c1','p2','p9', 'p2','3-0 (11-5, 11-7, 11-8)'],
-  // Marzo
-  [120,'19:00','c1','p2','p6', 'p2','3-1 (11-8, 11-9, 6-11, 11-7)'],
-  [130,'20:00','c2','p1','p2', 'p1','3-1 (11-7, 8-11, 11-6, 11-9)'],
-  [140,'19:00','c1','p2','p10','p2','3-0 (11-6, 11-8, 11-5)'],
-  // Febrero
-  [150,'18:00','c2','p2','p7', 'p2','3-2 (11-9, 9-11, 11-7, 7-11, 11-8)'],
-  [160,'20:00','c2','p2','p5', 'p5','2-3 (11-6, 9-11, 11-8, 7-11, 9-11)'],
-  [170,'19:00','c1','p2','p9', 'p2','3-1 (11-7, 11-9, 9-11, 11-6)'],
-
-  /* --- Partidos entre otros jugadores, para que el ranking tampoco quede vacío --- */
-  [4,  '19:00','c2','p12','p13','p12','3-1 (11-8, 11-6, 9-11, 11-7)'],
-  [11, '20:00','c2','p3','p4', 'p3','3-0 (11-6, 11-8, 11-9)'],
-  [18, '18:00','c1','p8','p9', 'p9','1-3 (11-9, 6-11, 7-11, 8-11)'],
-  [25, '19:00','c2','p14','p15','p14','3-2 (11-7, 8-11, 11-9, 5-11, 11-8)'],
-  [33, '20:00','c2','p1','p3', 'p3','1-3 (11-8, 7-11, 9-11, 8-11)'],
-  [42, '19:00','c1','p16','p17','p16','3-1 (11-6, 9-11, 11-7, 11-8)'],
-  [60, '20:00','c1','p18','p19','p18','3-2 (11-9, 8-11, 11-6, 7-11, 11-9)'],
-  [75, '19:00','c1','p11','p10','p11','3-0 (11-7, 11-5, 11-9)']
-];
-
 /* =========================================================
-   ESTADO
+   ESTADO Y DATOS
+   ---------------------------------------------------------
+   El estado en memoria mantiene la forma que la app ya usaba; lo que cambia es
+   de dónde viene. Cada acción escribe en la base de datos y luego se relee, de
+   modo que todos los jugadores ven lo mismo.
    ========================================================= */
-let state = null;
+let state = {
+  clubs:[], players:[], requests:[], bookings:[], contacts:{},
+  meId:null, session:null, adminMode:false
+};
 
-function uid(prefix){
-  return prefix + '_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+/* El correo y el teléfono están fuera del SELECT del directorio: se piden
+   aparte con contact_of(), que solo los entrega a quien tenga partido con esa
+   persona. Por eso las columnas se listan explícitamente. */
+const PROFILE_COLS = 'id,name,category,national_rank,club_id,hand,comuna,' +
+                     'playing_since,available_days,preferred_slot,bio,role,ladder_pos,created_at';
+
+/* ---------- Traducción entre las filas de la base y los objetos de la app ---------- */
+function mapProfile(row){
+  return {
+    id:row.id,
+    name:row.name || '',
+    category:row.category || '',
+    rank:row.national_rank,
+    clubId:row.club_id,
+    hand:row.hand || 'Diestro',
+    comuna:row.comuna || '',
+    since:row.playing_since || '',
+    days:row.available_days || [],
+    franja:row.preferred_slot || '',
+    bio:row.bio || '',
+    role:row.role || 'player',
+    ladderPos:row.ladder_pos,
+    createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
+  };
 }
 
-function seed(){
-  const players = SEED_PLAYERS.map(function(p, i){
-    // provider 'demo' = jugador de ejemplo: no tiene correo ni se puede eliminar.
-    return { id:'p'+(i+1), name:p[0], category:p[1], rank:p[2], clubId:p[3], hand:p[4],
-             provider:'demo', email:'' };
+function mapChallenge(row){
+  return {
+    id:row.id, fromId:row.from_id, toId:row.to_id, clubId:row.club_id,
+    date:row.match_date, time:row.match_time, court:row.court || 0,
+    ladder:!!row.ladder, msg:row.message || '', status:row.status,
+    note:row.note || '', bookingId:row.booking_id,
+    createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
+  };
+}
+
+function mapBooking(row){
+  return {
+    id:row.id, requestId:row.challenge_id, clubId:row.club_id, court:row.court,
+    date:row.match_date, time:row.match_time,
+    playerA:row.player_a, playerB:row.player_b, status:row.status,
+    result:row.winner_id ? { winnerId:row.winner_id, score:row.score || '' } : null,
+    ladder:row.ladder ? { defenderId:row.ladder_defender } : null,
+    createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
+  };
+}
+
+/* ---------- Lectura ---------- */
+async function fetchAll(){
+  const [clubs, profiles, challenges, bookings] = await Promise.all([
+    sb.from('clubs').select('*').order('name'),
+    sb.from('profiles').select(PROFILE_COLS),
+    sb.from('challenges').select('*').order('created_at', { ascending:false }),
+    sb.from('bookings').select('*')
+  ]);
+
+  const err = clubs.error || profiles.error || challenges.error || bookings.error;
+  if(err){ console.error(err); toast('No pude cargar los datos: ' + err.message, true); return false; }
+
+  CLUBS = clubs.data.map(function(c){
+    return { id:c.id, name:c.name, comuna:c.comuna, courts:c.courts };
   });
-  const bookings = SEED_HISTORY.map(function(h, i){
-    const d = new Date();
-    d.setDate(d.getDate() - h[0]);
-    return {
-      id:'b'+(i+1), requestId:null, clubId:h[2], court:(i % 2) + 1,
-      date:isoOf(d), time:h[1], playerA:h[3], playerB:h[4],
-      status:'confirmada', result:{ winnerId:h[5], score:h[6] }, createdAt:Date.now()
-    };
+  state.clubs    = CLUBS;
+  state.players  = profiles.data.map(mapProfile);
+  state.requests = challenges.data.map(mapChallenge);
+  state.bookings = bookings.data.map(mapBooking);
+  fillClubSelects();
+
+  await fetchContacts();
+  return true;
+}
+
+/* Contactos de los rivales con partido reservado: la base decide a quién se los
+   entrega, acá solo se piden. */
+async function fetchContacts(){
+  const mine = state.meId;
+  if(!mine) return;
+  const ids = {};
+  ids[mine] = true;
+  state.bookings.forEach(function(b){
+    if(b.status !== 'confirmada') return;
+    if(b.playerA === mine) ids[b.playerB] = true;
+    else if(b.playerB === mine) ids[b.playerA] = true;
   });
-  return { players:players, requests:[], bookings:bookings, meId:'p2',
-           session:null, adminMode:false };
+
+  const pend = Object.keys(ids).map(function(id){
+    return sb.rpc('contact_of', { target:id }).then(function(res){
+      const row = res.data && res.data[0];
+      if(row) state.contacts[id] = { email:row.email || '', phone:row.phone || '' };
+    });
+  });
+  await Promise.all(pend);
 }
 
-function load(){
-  try{
-    const raw = localStorage.getItem(STORE_KEY);
-    if(raw){
-      const parsed = JSON.parse(raw);
-      if(parsed && Array.isArray(parsed.players) && parsed.players.length) return parsed;
-    }
-  }catch(e){ /* almacenamiento no disponible o corrupto: partimos de cero */ }
-  return seed();
-}
+function contactOf(id){ return state.contacts[id] || { email:'', phone:'' }; }
 
-function save(){
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+/** Relee todo y vuelve a dibujar. Es barato: el volumen de datos es chico. */
+async function refresh(){
+  const ok = await fetchAll();
+  if(ok) render();
 }
 
 /* =========================================================
@@ -1339,36 +1296,20 @@ function checkSlot(clubId, date, time, aId, bId, preferred){
    ========================================================= */
 const LADDER_RANGE = 3;
 
-/** Deja cada escalerilla con los socios actuales del club, conservando lo ya jugado. */
-function syncLadders(){
-  if(!state.ladder) state.ladder = {};
-  CLUBS.forEach(function(c){
-    const members = state.players
-      .filter(function(p){ return p.clubId === c.id; })
-      .map(function(p){ return p.id; });
-    // Se mantiene el orden actual y se descartan los que ya no son del club.
-    const current = (state.ladder[c.id] || []).filter(function(id){ return members.indexOf(id) > -1; });
-    // Los nuevos entran al final. El orden de arranque es por categoría y luego por
-    // ranking nacional: comparar el #2 de Damas A con el #7 de Primera no dice nada.
-    // Desde ahí en adelante manda la cancha.
-    const missing = members
-      .filter(function(id){ return current.indexOf(id) === -1; })
-      .sort(function(a, b){
-        const pa = player(a) || {}, pb = player(b) || {};
-        const ca = CATEGORIES.indexOf(pa.category), cb = CATEGORIES.indexOf(pb.category);
-        if(ca !== cb) return ca - cb;
-        return (pa.rank || 9999) - (pb.rank || 9999);
-      });
-    state.ladder[c.id] = current.concat(missing);
-  });
+/* La posición la mantiene la base de datos (columna ladder_pos, con triggers que
+   ubican a cada jugador y cierran los huecos). Acá solo se lee. */
+function ladderOf(clubId){
+  return state.players
+    .filter(function(p){ return p.clubId === clubId && p.ladderPos; })
+    .sort(function(a, b){ return a.ladderPos - b.ladderPos; })
+    .map(function(p){ return p.id; });
 }
-
-function ladderOf(clubId){ return state.ladder[clubId] || []; }
 
 /** Posición del jugador en esa escalerilla, o 0 si no pertenece al club. */
 function ladderPos(clubId, playerId){
-  const i = ladderOf(clubId).indexOf(playerId);
-  return i < 0 ? 0 : i + 1;
+  const p = player(playerId);
+  if(!p || p.clubId !== clubId || !p.ladderPos) return 0;
+  return p.ladderPos;
 }
 
 /** Rivales desafiables: hasta LADDER_RANGE puestos hacia arriba. */
@@ -1383,24 +1324,6 @@ function canChallengeLadder(clubId, challengerId, defenderId){
   const dp = ladderPos(clubId, defenderId);
   if(!cp || !dp) return false;
   return dp < cp && cp - dp <= LADDER_RANGE;
-}
-
-/** Aplica el resultado de un partido de escalerilla. Devuelve el movimiento o null. */
-function applyLadderResult(b){
-  if(!b || !b.ladder || !b.result || b.ladderApplied) return null;
-  const list = state.ladder[b.ladder.clubId];
-  if(!list) return null;
-  const ci = list.indexOf(b.ladder.challengerId);
-  const di = list.indexOf(b.ladder.defenderId);
-  if(ci < 0 || di < 0) return null;
-
-  b.ladderApplied = true;
-  if(b.result.winnerId !== b.ladder.challengerId){
-    return { moved:false, defended:di + 1 };
-  }
-  list[ci] = b.ladder.defenderId;
-  list[di] = b.ladder.challengerId;
-  return { moved:true, from:ci + 1, to:di + 1 };
 }
 
 /* Estadísticas derivadas de los partidos con resultado */
@@ -1418,7 +1341,10 @@ function statsOf(playerId){
 /* =========================================================
    ACCIONES
    ========================================================= */
-function sendRequest(toId, clubId, date, time, msg, court, ladderClubId){
+/* Las validaciones del cliente son para la interfaz: avisan temprano y evitan
+   viajes inútiles. La verdad la tiene el servidor, que revalida todo dentro de
+   accept_challenge() antes de reservar. */
+async function sendRequest(toId, clubId, date, time, msg, court, ladderClubId){
   const fromId = me().id;
 
   if(ladderClubId && !canChallengeLadder(ladderClubId, fromId, toId)){
@@ -1434,85 +1360,61 @@ function sendRequest(toId, clubId, date, time, msg, court, ladderClubId){
   });
   if(dup) return { ok:false, reason:'Ya existe un desafío pendiente con ese jugador para ese bloque.' };
 
-  state.requests.push({
-    id: uid('r'), fromId:fromId, toId:toId, clubId:clubId, date:date, time:time,
-    court: court || 0, ladder: ladderClubId || null,
-    msg:(msg||'').trim(), status:'pendiente', createdAt:Date.now()
+  const { error } = await sb.from('challenges').insert({
+    from_id:fromId, to_id:toId, club_id:clubId,
+    match_date:date, match_time:time, court:court || 0,
+    ladder:!!ladderClubId, message:(msg || '').trim()
   });
-  save();
+  if(error) return { ok:false, reason:error.message };
+
+  await refresh();
   return { ok:true };
 }
 
-/** Aceptar un desafío => reserva inmediata de cancha. */
-function acceptRequest(reqId){
-  const r = state.requests.find(function(x){ return x.id === reqId; });
-  if(!r || r.status !== 'pendiente') return { ok:false, reason:'La solicitud ya no está pendiente.' };
-
-  // Las posiciones pueden haber cambiado entre el envío y la respuesta.
-  if(r.ladder && !canChallengeLadder(r.ladder, r.fromId, r.toId)){
-    r.status = 'caducada';
-    r.note = 'Las posiciones de la escalerilla cambiaron y el desafío quedó fuera de rango.';
-    save();
-    return { ok:false, reason:r.note };
-  }
-
-  const check = checkSlot(r.clubId, r.date, r.time, r.fromId, r.toId, r.court);
-  if(!check.ok){
-    r.status = 'caducada';
-    r.note = check.reason;
-    save();
-    return { ok:false, reason:check.reason + ' El desafío quedó caducado.' };
-  }
-
-  const booking = {
-    id: uid('b'), requestId:r.id, clubId:r.clubId, court:check.court,
-    date:r.date, time:r.time, playerA:r.fromId, playerB:r.toId,
-    status:'confirmada', result:null, createdAt:Date.now(),
-    // El desafiante siempre es quien envió la solicitud.
-    ladder: r.ladder ? { clubId:r.ladder, challengerId:r.fromId, defenderId:r.toId } : null
-  };
-  state.bookings.push(booking);
-  r.status = 'aceptada';
-  r.bookingId = booking.id;
-
-  // Cualquier otro desafío pendiente de estos dos jugadores en el mismo bloque queda sin efecto.
-  state.requests.forEach(function(o){
-    if(o.id === r.id || o.status !== 'pendiente') return;
-    if(o.date !== r.date || o.time !== r.time) return;
-    const involved = [o.fromId, o.toId];
-    if(involved.indexOf(r.fromId) > -1 || involved.indexOf(r.toId) > -1){
-      o.status = 'caducada';
-      o.note = 'Uno de los jugadores reservó otro partido en ese bloque.';
-    }
-  });
-
-  save();
-  return { ok:true, booking:booking };
+/** Aceptar un desafío => reserva inmediata. Toda la validación ocurre en el
+    servidor, en una transacción, que es lo único que evita la doble reserva. */
+async function acceptRequest(reqId){
+  const { data, error } = await sb.rpc('accept_challenge', { p_challenge:reqId });
+  await refresh();
+  if(error) return { ok:false, reason:error.message };
+  return { ok:true, booking:mapBooking(data) };
 }
 
-function rejectRequest(reqId){
-  const r = state.requests.find(function(x){ return x.id === reqId; });
-  if(r && r.status === 'pendiente'){ r.status = 'rechazada'; save(); }
+async function rejectRequest(reqId){
+  const { error } = await sb.from('challenges').update({ status:'rechazada' }).eq('id', reqId);
+  if(error){ toast(error.message, true); return; }
+  await refresh();
 }
-function cancelRequest(reqId){
-  const r = state.requests.find(function(x){ return x.id === reqId; });
-  if(r && r.status === 'pendiente'){ r.status = 'cancelada'; save(); }
+
+async function cancelRequest(reqId){
+  const { error } = await sb.from('challenges').update({ status:'cancelada' }).eq('id', reqId);
+  if(error){ toast(error.message, true); return; }
+  await refresh();
 }
-function cancelBooking(bookingId){
+
+async function cancelBooking(bookingId){
   const b = state.bookings.find(function(x){ return x.id === bookingId; });
-  if(!b) return;
-  b.status = 'cancelada';
-  b.cancelledBy = me().id;
-  const r = state.requests.find(function(x){ return x.id === b.requestId; });
-  if(r) r.status = 'cancelada';
-  save();
+  const { error } = await sb.from('bookings').update({ status:'cancelada' }).eq('id', bookingId);
+  if(error){ toast(error.message, true); return; }
+  if(b && b.requestId){
+    await sb.from('challenges').update({ status:'cancelada' }).eq('id', b.requestId);
+  }
+  await refresh();
+}
+
+async function registerResult(bookingId, winnerId, score){
+  const { error } = await sb.rpc('register_result', {
+    p_booking:bookingId, p_winner:winnerId, p_score:score || ''
+  });
+  if(error) return { ok:false, reason:error.message };
+  await refresh();
+  return { ok:true };
 }
 
 /* =========================================================
    RENDER
    ========================================================= */
 function render(){
-  renderMeSelect();
   renderSession();
   renderAdmin();
   renderHome();
@@ -1524,17 +1426,6 @@ function render(){
   renderRanking();
   renderCourts();
   renderBadges();
-}
-
-function renderMeSelect(){
-  const sel = $('meSelect');
-  sel.innerHTML = state.players
-    .slice()
-    .sort(function(a,b){ return a.name.localeCompare(b.name,'es'); })
-    .map(function(p){
-      return '<option value="'+p.id+'">'+esc(p.name)+' · '+esc(p.category)+'</option>';
-    }).join('');
-  sel.value = me().id;
 }
 
 function renderBadges(){
@@ -1682,7 +1573,8 @@ function matchLine(b, past){
   const other = player(b.playerA === mine ? b.playerB : b.playerA);
   const c = club(b.clubId);
   // Para partidos por jugar mostramos el contacto del rival, así pueden coordinar.
-  const contact = other ? [other.phone, other.email].filter(Boolean).join(' · ') : '';
+  const oc = other ? contactOf(other.id) : { email:'', phone:'' };
+  const contact = [oc.phone, oc.email].filter(Boolean).join(' · ');
   let right;
   if(past){
     if(b.result){
@@ -1809,7 +1701,7 @@ function renderLadder(){
 
     // ¿Ya hay un desafío de escalerilla pendiente entre ambos?
     const pendiente = state.requests.some(function(r){
-      return r.status === 'pendiente' && r.ladder === clubId &&
+      return r.status === 'pendiente' && r.ladder && r.clubId === clubId &&
         ((r.fromId === mine && r.toId === id) || (r.fromId === id && r.toId === mine));
     });
 
@@ -2170,8 +2062,10 @@ function renderHome(){
 
 /** Todo lo que un jugador puede editar de sí mismo, con sus valores por defecto. */
 function profileOf(p){
+  const c = contactOf(p.id);
   return {
-    email:p.email||'', phone:p.phone||'', comuna:p.comuna||'',
+    email:(state.session && p.id === state.meId ? state.session.user.email : c.email) || '',
+    phone:c.phone || '', comuna:p.comuna||'',
     since:p.since||'', days:p.days||[], franja:p.franja||'', bio:p.bio||''
   };
 }
@@ -2436,16 +2330,11 @@ function fillConfig(p){
   setDirty(false);
 }
 
-function saveConfig(){
+async function saveConfig(){
   const p = me();
   const clubPrevio = p.clubId;
   const name = $('cfName').value.trim();
   if(name.length < 3){ toast('Escribe tu nombre completo.', true); $('cfName').focus(); return; }
-
-  const email = $('cfEmail').value.trim();
-  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
-    toast('Ese correo no parece válido.', true); $('cfEmail').focus(); return;
-  }
 
   const rank = parseInt($('cfRank').value, 10);
   if($('cfRank').value !== '' && (!isFinite(rank) || rank < 1 || rank > 999)){
@@ -2458,30 +2347,32 @@ function saveConfig(){
     toast('El año debe estar entre 1950 y ' + thisYear + '.', true); $('cfSince').focus(); return;
   }
 
-  p.name = name;
-  p.category = $('cfCat').value;
-  p.rank = ($('cfRank').value !== '') ? rank : null;
-  p.clubId = $('cfClub').value;
-  p.hand = $('cfHand').value;
-  p.since = ($('cfSince').value !== '') ? String(since) : '';
-  p.email = email;
-  p.phone = $('cfPhone').value.trim();
-  p.comuna = $('cfComuna').value.trim();
-  p.franja = $('cfFranja').value;
-  p.bio = $('cfBio').value.trim();
-  p.days = Array.prototype.slice.call(document.querySelectorAll('#cfDays input:checked'))
-    .map(function(i){ return i.value; });
+  $('cfSave').disabled = true;
+  const { error } = await sb.from('profiles').update({
+    name:name,
+    category:$('cfCat').value,
+    national_rank:($('cfRank').value !== '' ? rank : null),
+    club_id:$('cfClub').value,
+    hand:$('cfHand').value,
+    playing_since:($('cfSince').value !== '' ? String(since) : ''),
+    phone:$('cfPhone').value.trim(),
+    comuna:$('cfComuna').value.trim(),
+    preferred_slot:$('cfFranja').value,
+    bio:$('cfBio').value.trim(),
+    available_days:Array.prototype.slice.call(document.querySelectorAll('#cfDays input:checked'))
+      .map(function(i){ return i.value; })
+  }).eq('id', p.id);
+  $('cfSave').disabled = false;
 
-  const clubAnterior = clubPrevio !== p.clubId;
-  syncLadders();   // si cambió de club, sale de una escalerilla y entra al final de la otra
-  save();
+  if(error){ toast(error.message, true); return; }
+
   setDirty(false);
-  render();
+  await refresh();
 
-  if(clubAnterior){
-    const cl = club(p.clubId);
-    toast('Perfil actualizado. Al cambiarte de club entras al puesto #' + ladderPos(p.clubId, p.id) +
-          ' de la escalerilla de ' + (cl ? cl.name : 'tu club') + '.');
+  if(clubPrevio !== me().clubId){
+    const cl = club(me().clubId);
+    toast('Perfil actualizado. Al cambiarte de club entras al puesto #' +
+          ladderPos(me().clubId, me().id) + ' de la escalerilla de ' + (cl ? cl.name : 'tu club') + '.');
   } else {
     toast('Perfil actualizado.');
   }
@@ -2610,19 +2501,14 @@ function openResult(bookingId){
    Google real necesita un cliente OAuth, cargar su script y un backend que valide
    el token, nada de lo cual existe en un archivo autocontenido.
    ========================================================= */
-const ADMIN_KEY = 'squash2026';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-let authMode = null;      // 'google' | 'correo' | 'admin'
-let authCreating = false; // true cuando el formulario está creando una cuenta nueva
+let authMode = null;   // 'correo' | 'registro' | 'perfil'
 
-function findByEmail(email){
-  const e = String(email || '').trim().toLowerCase();
-  if(!e) return null;
-  return state.players.find(function(p){ return (p.email || '').toLowerCase() === e; }) || null;
-}
+function isAdmin(){ return !!(me() && me().role === 'admin'); }
 
-function isAdmin(){ return !!state.adminMode; }
+/** Datos mínimos para poder usar la app. */
+function profileComplete(p){ return !!(p && p.name && p.category && p.clubId); }
 
 function showAuth(){
   $('authScreen').classList.add('open');
@@ -2639,261 +2525,214 @@ function showApp(){
   activateView('inicio');
 }
 
-function startSession(playerId, admin){
-  state.session = { playerId:playerId, at:Date.now() };
-  state.adminMode = !!admin;
-  state.meId = playerId;
-  save();
+/* ---------- Entrada y salida ---------- */
+async function signInWithGoogle(){
+  const { error } = await sb.auth.signInWithOAuth({
+    provider:'google',
+    options:{ redirectTo: location.origin + location.pathname }
+  });
+  if(error) toast('No pude abrir el acceso con Google: ' + error.message, true);
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  state.session = null;
+  state.meId = null;
+  state.contacts = {};
+  showAuth();
+  toast('Cerraste sesion.');
+}
+
+/** Con sesión válida: carga los datos y decide si falta completar el perfil. */
+async function enterApp(session){
+  state.session = session;
+  state.meId = session.user.id;
+
+  const ok = await fetchAll();
+  if(!ok) return;
+
+  if(!profileComplete(me())){
+    startAuth('perfil');
+    $('authScreen').classList.add('open');
+    document.querySelector('.topbar').hidden = true;
+    document.querySelector('main').hidden = true;
+    return;
+  }
   showApp();
 }
 
-function logout(){
-  state.session = null;
-  state.adminMode = false;
-  save();
-  showAuth();
-  toast('Cerraste sesión.');
-}
-
-function createAccount(data){
-  const p = {
-    id: uid('usr'),
-    name: data.name,
-    email: data.email.toLowerCase(),
-    provider: data.provider,
-    category: data.category,
-    clubId: data.clubId,
-    rank: data.rank || null,
-    hand: 'Diestro',
-    createdAt: Date.now()
-  };
-  state.players.push(p);
-  syncLadders();
-  save();
-  return p;
-}
-
-/* ---------- Formulario de la pantalla de entrada ---------- */
+/* ---------- Formulario ---------- */
 function authReset(){
   authMode = null;
-  authCreating = false;
   $('authChoices').hidden = false;
   $('authForm').hidden = true;
-  ['auEmail','auName','auRank','auKey'].forEach(function(id){ $(id).value = ''; });
+  ['auEmail','auPass','auName','auRank'].forEach(function(id){ $(id).value = ''; });
 }
 
 function authShowFields(opts){
   $('fieldEmail').hidden   = !opts.email;
+  $('fieldPass').hidden    = !opts.pass;
   $('fieldName').hidden    = !opts.name;
   $('fieldProfile').hidden = !opts.profile;
   $('fieldRank').hidden    = !opts.profile;
-  $('fieldAdmin').hidden   = !opts.admin;
+  $('auBack').hidden       = !!opts.noBack;
 }
 
 function startAuth(mode){
+  if(mode === 'google'){ signInWithGoogle(); return; }
+
   authMode = mode;
-  authCreating = false;
   $('authChoices').hidden = true;
   $('authForm').hidden = false;
 
-  if(mode === 'admin'){
-    authShowFields({ admin:true });
-    $('authNote').innerHTML = '<b>Acceso de administrador.</b> Te deja recorrer la app como ' +
-      'cualquier usuario de prueba. La clave está escrita en el código: sirve para separar ' +
-      'roles en la demostración, no para proteger nada.';
-    $('auSubmit').textContent = 'Entrar como admin';
-    setTimeout(function(){ $('auKey').focus(); }, 30);
-    return;
-  }
-
-  if(mode === 'google'){
-    authShowFields({ email:true, name:true });
-    $('authNote').innerHTML = '<b>Acceso con Google simulado.</b> En el prototipo escribes ' +
-      'tú el nombre y el correo que Google entregaría. Nunca pedimos tu contraseña, y esto ' +
-      'no se conecta con tu cuenta real de Google.';
-    $('auSubmit').textContent = 'Continuar';
+  if(mode === 'correo'){
+    authShowFields({ email:true, pass:true });
+    $('authNote').innerHTML = 'Entra con el correo y la contrase&ntilde;a con que te registraste.';
+    $('auSubmit').textContent = 'Entrar';
     setTimeout(function(){ $('auEmail').focus(); }, 30);
-    return;
+
+  } else if(mode === 'registro'){
+    authShowFields({ email:true, pass:true, name:true });
+    $('authNote').innerHTML = '<b>Cuenta nueva.</b> La contrase&ntilde;a se guarda cifrada en el ' +
+      'servidor, nunca en tu navegador. En el paso siguiente eliges categor&iacute;a y club.';
+    $('auSubmit').textContent = 'Crear cuenta';
+    setTimeout(function(){ $('auEmail').focus(); }, 30);
+
+  } else if(mode === 'perfil'){
+    authShowFields({ name:true, profile:true, noBack:true });
+    const yo = me();
+    if(yo && yo.name) $('auName').value = yo.name;
+    $('authNote').innerHTML = '<b>Falta un paso.</b> Elige tu categor&iacute;a y tu club para ' +
+      'entrar al directorio y a la escalerilla. Todo esto se puede cambiar despu&eacute;s en Mi perfil.';
+    $('auSubmit').textContent = 'Entrar a la app';
+    setTimeout(function(){ $('auCat').focus(); }, 30);
   }
-
-  authShowFields({ email:true });
-  $('authNote').innerHTML = 'Escribe tu correo. Si ya tienes cuenta entras directo; ' +
-    'si es la primera vez, te pedimos un par de datos para armar tu perfil.';
-  $('auSubmit').textContent = 'Continuar';
-  setTimeout(function(){ $('auEmail').focus(); }, 30);
 }
 
-/** Segundo paso: completar el perfil de una cuenta nueva. */
-function authAskProfile(email, name){
-  authCreating = true;
-  authShowFields({ email:true, name:true, profile:true });
-  $('auEmail').value = email;
-  if(name) $('auName').value = name;
-  $('authNote').innerHTML = '<b>Cuenta nueva.</b> Completa tu perfil para entrar al ' +
-    'directorio y a la escalerilla de tu club. Todo esto lo puedes editar después en Mi perfil.';
-  $('auSubmit').textContent = 'Crear mi cuenta';
-  setTimeout(function(){ $((name ? 'auCat' : 'auName')).focus(); }, 30);
-}
+async function submitAuth(){
+  const btn = $('auSubmit');
+  btn.disabled = true;
 
-function submitAuth(){
-  // --- Administrador ---
-  if(authMode === 'admin'){
-    if($('auKey').value.trim() !== ADMIN_KEY){
-      toast('Esa clave no es la del prototipo.', true);
+  try{
+    /* --- Completar perfil --- */
+    if(authMode === 'perfil'){
+      const name = $('auName').value.trim();
+      if(name.length < 3){ toast('Escribe tu nombre completo.', true); return; }
+      const rank = parseInt($('auRank').value, 10);
+      if($('auRank').value !== '' && (!isFinite(rank) || rank < 1 || rank > 999)){
+        toast('El ranking debe ser un numero entre 1 y 999.', true); return;
+      }
+
+      const upd = await sb.from('profiles').update({
+        name:name, category:$('auCat').value, club_id:$('auClub').value,
+        national_rank:($('auRank').value !== '' ? rank : null)
+      }).eq('id', state.meId);
+      if(upd.error){ toast(upd.error.message, true); return; }
+
+      await fetchAll();
+      showApp();
+      const cl = club(me().clubId);
+      toast('Listo. Entras al puesto #' + ladderPos(me().clubId, me().id) +
+            ' de la escalerilla de ' + (cl ? cl.name : 'tu club') + '.');
       return;
     }
-    const first = state.players[0];
-    startSession(state.meId || (first && first.id), true);
-    toast('Entraste como administrador. Puedes recorrer la app como cualquier usuario.');
-    return;
-  }
 
-  const email = $('auEmail').value.trim();
-  if(!EMAIL_RE.test(email)){
-    toast('Escribe un correo válido.', true);
-    $('auEmail').focus();
-    return;
-  }
+    const email = $('auEmail').value.trim();
+    const pass  = $('auPass').value;
+    if(!EMAIL_RE.test(email)){ toast('Escribe un correo valido.', true); return; }
+    if(pass.length < 8){ toast('La contrase\u00f1a debe tener al menos 8 caracteres.', true); return; }
 
-  // --- Cuenta existente ---
-  const found = findByEmail(email);
-  if(found && !authCreating){
-    startSession(found.id, false);
-    toast('Hola de nuevo, ' + found.name.split(' ')[0] + '.');
-    return;
-  }
-  if(found && authCreating){
-    toast('Ese correo ya tiene una cuenta. Vuelve y entra con él.', true);
-    return;
-  }
+    /* --- Entrar --- */
+    if(authMode === 'correo'){
+      const res = await sb.auth.signInWithPassword({ email:email, password:pass });
+      if(res.error){
+        toast(res.error.message === 'Invalid login credentials'
+          ? 'Correo o contrase\u00f1a incorrectos.' : res.error.message, true);
+        return;
+      }
+      await enterApp(res.data.session);
+      const yo = me();
+      if(yo && profileComplete(yo)) toast('Hola de nuevo, ' + yo.name.split(' ')[0] + '.');
+      return;
+    }
 
-  const name = $('auName').value.trim();
+    /* --- Registrarse --- */
+    if(authMode === 'registro'){
+      const name = $('auName').value.trim();
+      if(name.length < 3){ toast('Escribe tu nombre completo.', true); return; }
 
-  // --- Primer paso de una cuenta nueva ---
-  if(!authCreating){
-    authAskProfile(email, name);
-    return;
+      const res = await sb.auth.signUp({
+        email:email, password:pass,
+        options:{ data:{ full_name:name }, emailRedirectTo: location.origin + location.pathname }
+      });
+      if(res.error){ toast(res.error.message, true); return; }
+
+      if(!res.data.session){
+        toast('Te enviamos un correo para confirmar la cuenta. Abrelo y vuelve a entrar.');
+        authReset();
+        return;
+      }
+      await enterApp(res.data.session);
+      return;
+    }
+  } finally {
+    btn.disabled = false;
   }
-
-  // --- Creación ---
-  if(name.length < 3){
-    toast('Escribe tu nombre completo.', true);
-    $('auName').focus();
-    return;
-  }
-  const rank = parseInt($('auRank').value, 10);
-  if($('auRank').value !== '' && (!isFinite(rank) || rank < 1 || rank > 999)){
-    toast('El ranking debe ser un número entre 1 y 999.', true);
-    $('auRank').focus();
-    return;
-  }
-
-  const p = createAccount({
-    name:name, email:email, provider:(authMode === 'google' ? 'Google' : 'Correo'),
-    category:$('auCat').value, clubId:$('auClub').value,
-    rank:($('auRank').value !== '' ? rank : null)
-  });
-
-  startSession(p.id, false);
-  const cl = club(p.clubId);
-  toast('¡Cuenta creada! Entras al puesto #' + ladderPos(p.clubId, p.id) +
-        ' de la escalerilla de ' + (cl ? cl.name : 'tu club') + '.');
 }
 
-/* ---------- Barra superior según la sesión ---------- */
+/* ---------- Barra superior ---------- */
 function renderSession(){
-  const admin = isAdmin();
   const p = me();
-
+  const admin = isAdmin();
   $('adminFlag').hidden = !admin;
   $('tabAdmin').hidden = !admin;
-  $('meLabel').hidden = !admin;
-  $('meSelect').hidden = !admin;
-  $('btnNewPlayer').hidden = !admin;
-  $('userChip').hidden = admin;
-
-  if(!admin && p){
+  if(p){
     const cl = club(p.clubId);
     $('userChip').innerHTML = esc(p.name) + ' <small>' + esc(cl ? cl.name : '') + '</small>';
   }
 }
 
-/* ---------- Panel de administración ---------- */
+/* ---------- Panel de administracion (solo lectura) ----------
+   No hay suplantacion: las reglas de seguridad amarran los datos a quien inicio
+   sesion, y suplantar exigiria la clave secreta, que nunca va en el navegador. */
 function renderAdmin(){
   if(!isAdmin()) return;
 
-  const creadas = state.players.filter(function(p){ return p.provider && p.provider !== 'demo'; });
   const pendientes = state.requests.filter(function(r){ return r.status === 'pendiente'; }).length;
   const reservas = state.bookings.filter(function(b){
     return b.status === 'confirmada' && !isPast(b.date, b.time);
   }).length;
+  const jugados = state.bookings.filter(function(b){ return b.result; }).length;
 
   $('adminTiles').innerHTML =
-    tile(state.players.length, 'Cuentas totales', 'Incluye los jugadores de ejemplo') +
-    tile(creadas.length, 'Cuentas creadas', 'Registradas desde la pantalla de entrada', creadas.length ? 'good' : '') +
-    tile(pendientes, 'Desafíos pendientes', 'En toda la app') +
-    tile(reservas, 'Reservas vigentes', 'Partidos por jugar');
+    tile(state.players.length, 'Cuentas registradas', 'Con perfil creado') +
+    tile(pendientes, 'Desafios pendientes', 'En toda la app') +
+    tile(reservas, 'Reservas vigentes', 'Partidos por jugar', reservas ? 'good' : '') +
+    tile(jugados, 'Partidos jugados', 'Con resultado cargado');
 
-  const orden = state.players.slice().sort(function(a, b){
-    return (b.createdAt || 0) - (a.createdAt || 0);
-  });
+  const orden = state.players.slice().sort(function(a, b){ return (b.createdAt || 0) - (a.createdAt || 0); });
 
   $('adminUsers').innerHTML = orden.map(function(p){
     const cl = club(p.clubId);
     const pos = ladderPos(p.clubId, p.id);
-    const esActual = p.id === me().id;
-    const deDemo = !p.provider || p.provider === 'demo';
+    const st = statsOf(p.id);
+    const esActual = p.id === state.meId;
 
     return '<div class="row' + (esActual ? ' mine' : '') + '">' +
       '<div class="avatar' + (esActual ? '' : ' alt') + '">' + esc(initials(p.name)) + '</div>' +
       '<div class="grow">' +
-        '<div class="row-title">' + esc(p.name) +
-          ' <span class="chip cat">' + esc(p.category) + '</span>' +
-          ' <span class="chip">' + esc(deDemo ? 'ejemplo' : p.provider) + '</span></div>' +
-        '<div class="row-sub">' + esc(p.email || 'sin correo · cuenta de ejemplo') +
-          ' — ' + esc(cl ? cl.name : 'sin club') + (pos ? ' · puesto #' + pos : '') + '</div>' +
+        '<div class="row-title">' + esc(p.name || 'Sin nombre') +
+          (p.category ? ' <span class="chip cat">' + esc(p.category) + '</span>' : '') +
+          (p.role === 'admin' ? ' <span class="chip">admin</span>' : '') + '</div>' +
+        '<div class="row-sub">' + esc(cl ? cl.name : 'sin club') +
+          (pos ? ' &middot; puesto #' + pos : '') + ' &middot; ' + st.played + ' partidos, ' +
+          st.won + ' ganados</div>' +
         '<div class="row-sub mono">' + esc(p.id) +
-          (p.createdAt ? ' · creada el ' + fmtDate(isoOf(new Date(p.createdAt))) : '') + '</div>' +
+          (p.createdAt ? ' &middot; desde ' + fmtDate(isoOf(new Date(p.createdAt))) : '') + '</div>' +
       '</div>' +
-      (esActual
-        ? '<span class="state ok">estás navegando como esta cuenta</span>'
-        : '<div class="btn-row">' +
-            '<button class="btn primary sm" data-impersonate="' + p.id + '">Entrar como</button>' +
-            (deDemo ? '' : '<button class="btn danger sm" data-delaccount="' + p.id + '">Eliminar</button>') +
-          '</div>') +
+      (esActual ? '<span class="state ok">tu cuenta</span>' : '') +
     '</div>';
   }).join('');
-}
-
-function impersonate(id){
-  const p = player(id);
-  if(!p) return;
-  state.meId = id;
-  setDirty(false);
-  save();
-  render();
-  toast('Estás navegando como ' + p.name + '.');
-}
-
-/** Borra una cuenta creada en la demo, junto con sus desafíos y reservas futuras. */
-function deleteAccount(id){
-  const p = player(id);
-  if(!p || !p.provider || p.provider === 'demo') return;
-
-  state.requests = state.requests.filter(function(r){ return r.fromId !== id && r.toId !== id; });
-  state.bookings.forEach(function(b){
-    if((b.playerA === id || b.playerB === id) && !isPast(b.date, b.time)) b.status = 'cancelada';
-  });
-  state.players = state.players.filter(function(x){ return x.id !== id; });
-  syncLadders();
-
-  if(state.meId === id){
-    const first = state.players[0];
-    state.meId = first ? first.id : null;
-  }
-  save();
-  render();
-  toast('Cuenta de ' + p.name + ' eliminada.');
 }
 
 /* =========================================================
@@ -2917,6 +2756,27 @@ function fillSelect(sel, options, firstLabel, firstValue){
   sel.innerHTML = html;
 }
 
+/** Rellena los selectores de club una vez que la base entregó los clubes. */
+function fillClubSelects(){
+  const previos = {};
+  ['cfClub','auClub','fClub','cClub','lClub','chClub'].forEach(function(id){
+    previos[id] = $(id).value;
+  });
+
+  fillSelect($('cfClub'), clubOptions(), null, null);
+  fillSelect($('auClub'), clubOptions(), null, null);
+  fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
+  fillSelect($('cClub'), clubOptions(), null, null);
+  fillSelect($('lClub'), clubOptions(), null, null);
+  fillSelect($('chClub'), clubOptions(), null, null);
+
+  Object.keys(previos).forEach(function(id){
+    if(previos[id] && $(id).querySelector('option[value="' + previos[id] + '"]')){
+      $(id).value = previos[id];
+    }
+  });
+}
+
 function clubOptions(){
   return CLUBS.map(function(c){ return { value:c.id, label:c.name + ' · ' + c.comuna }; });
 }
@@ -2927,16 +2787,8 @@ function catOptions(){
 function initControls(){
   fillSelect($('fCat'), catOptions(), 'Todas las categorías', 'todas');
   fillSelect($('rCat'), catOptions(), 'Todas las categorías', 'todas');
-  fillSelect($('npCat'), catOptions(), null, null);
   fillSelect($('cfCat'), catOptions(), null, null);
-  fillSelect($('cfClub'), clubOptions(), null, null);
   fillSelect($('auCat'), catOptions(), null, null);
-  fillSelect($('auClub'), clubOptions(), null, null);
-  fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
-  fillSelect($('cClub'), clubOptions(), null, null);
-  fillSelect($('lClub'), clubOptions(), null, null);
-  fillSelect($('chClub'), clubOptions(), null, null);
-  fillSelect($('npClub'), clubOptions(), null, null);
 
   fillSelect($('chTime'), SLOTS.map(function(t){ return { value:t, label:t + ' hrs' }; }), null, null);
   $('chTime').value = '19:00';
@@ -2988,15 +2840,6 @@ function bindEvents(){
     if(tab) activateView(tab.dataset.view);
   });
 
-  // Cambiar de jugador activo
-  $('meSelect').addEventListener('change', function(){
-    state.meId = this.value;
-    save();
-    setDirty(false);          // el formulario pasa a ser el del nuevo jugador
-    render();
-    toast('Ahora estás como ' + me().name);
-  });
-
   // Sub-navegación del perfil
   $('profileSeg').addEventListener('click', function(e){
     const btn = e.target.closest('.seg-btn');
@@ -3037,48 +2880,49 @@ function bindEvents(){
   });
 
   // Acciones delegadas
-  document.addEventListener('click', function(e){
-    const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],[data-impersonate],[data-delaccount]');
+  document.addEventListener('click', async function(e){
+    const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],' +
+      '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result]');
     if(!el) return;
     const d = el.dataset;
 
-    if(d.impersonate){ impersonate(d.impersonate); return; }
-    if(d.delaccount){
-      const p = player(d.delaccount);
-      if(p && confirm('¿Eliminar la cuenta de ' + p.name + '? Se cancelan sus partidos por jugar.')){
-        deleteAccount(d.delaccount);
-      }
-      return;
-    }
     if(d.news){ openNews(d.news); return; }
-    if(d.ladderChallenge){ openChallenge(d.ladderChallenge, d.ladderClub); return; }
     if(d.goto){
       activateView(d.goto);
       if(d.pane) activateProfilePane(d.pane);
       return;
     }
+    if(d.ladderChallenge){ openChallenge(d.ladderChallenge, d.ladderClub); return; }
     if(d.challenge){ openChallenge(d.challenge); return; }
-
-    if(d.accept){
-      const res = acceptRequest(d.accept);
-      render();
-      if(res.ok){
-        const c = club(res.booking.clubId);
-        toast('Reserva confirmada: ' + c.name + ', cancha ' + res.booking.court + ', ' + fmtDate(res.booking.date) + ' ' + res.booking.time + ' hrs.');
-      } else {
-        toast(res.reason, true);
-      }
-      return;
-    }
-    if(d.reject){ rejectRequest(d.reject); render(); toast('Desafío rechazado.'); return; }
-    if(d.cancelreq){ cancelRequest(d.cancelreq); render(); toast('Desafío retirado.'); return; }
-    if(d.cancelbooking){
-      if(confirm('¿Cancelar este partido y liberar la cancha?')){
-        cancelBooking(d.cancelbooking); render(); toast('Partido cancelado, cancha liberada.');
-      }
-      return;
-    }
     if(d.result){ openResult(d.result); return; }
+
+    // Las que escriben en la base bloquean el boton mientras viajan.
+    el.disabled = true;
+    try{
+      if(d.accept){
+        const res = await acceptRequest(d.accept);
+        if(res.ok){
+          const c = club(res.booking.clubId);
+          toast('Reserva confirmada: ' + (c ? c.name : '') + ', cancha ' + res.booking.court +
+                ', ' + fmtDate(res.booking.date) + ' ' + res.booking.time + ' hrs.');
+        } else {
+          toast(res.reason, true);
+        }
+      } else if(d.reject){
+        await rejectRequest(d.reject);
+        toast('Desafío rechazado.');
+      } else if(d.cancelreq){
+        await cancelRequest(d.cancelreq);
+        toast('Desafío retirado.');
+      } else if(d.cancelbooking){
+        if(confirm('¿Cancelar este partido y liberar la cancha?')){
+          await cancelBooking(d.cancelbooking);
+          toast('Partido cancelado, cancha liberada.');
+        }
+      }
+    } finally {
+      el.disabled = false;
+    }
   });
 
   // Modal desafío
@@ -3089,12 +2933,13 @@ function bindEvents(){
     challengeCourt = parseInt(b.dataset.court, 10);
     updateAvail();
   });
-  $('chSend').addEventListener('click', function(){
-    const res = sendRequest(challengeTargetId, $('chClub').value, $('chDate').value, $('chTime').value,
-                            $('chMsg').value, challengeCourt, challengeLadder);
+  $('chSend').addEventListener('click', async function(){
+    this.disabled = true;
+    const res = await sendRequest(challengeTargetId, $('chClub').value, $('chDate').value,
+                                  $('chTime').value, $('chMsg').value, challengeCourt, challengeLadder);
+    this.disabled = false;
     if(res.ok){
       closeModal('challengeModal');
-      render();
       toast('Desafío' + (challengeLadder ? ' de escalerilla' : '') + ' enviado a ' +
             player(challengeTargetId).name + '. Queda pendiente de su respuesta.');
     } else {
@@ -3103,50 +2948,27 @@ function bindEvents(){
     }
   });
 
-  // Modal nuevo jugador
-  $('btnNewPlayer').addEventListener('click', function(){
-    $('npName').value = '';
-    $('npRank').value = '';
-    openModal('playerModal');
-  });
-  $('npSave').addEventListener('click', function(){
-    const name = $('npName').value.trim();
-    if(name.length < 3){ toast('Escribe el nombre completo del jugador.', true); return; }
-    const rank = parseInt($('npRank').value, 10);
-    const p = {
-      id: uid('p'), name:name, category:$('npCat').value,
-      rank: (isFinite(rank) && rank > 0) ? rank : null,
-      clubId: $('npClub').value, hand: $('npHand').value
-    };
-    state.players.push(p);
-    syncLadders();   // entra al final de la escalerilla de su club
-    save();
-    closeModal('playerModal');
-    render();
-    const cl = club(p.clubId);
-    toast(p.name + ' quedó registrado en ' + p.category + ' · puesto #' +
-          ladderPos(p.clubId, p.id) + ' de la escalerilla de ' + (cl ? cl.name : 'su club') + '.');
-  });
-
   // Modal resultado
-  $('rsSave').addEventListener('click', function(){
+  $('rsSave').addEventListener('click', async function(){
     const bookingId = this.dataset.booking;
     const b = state.bookings.find(function(x){ return x.id === bookingId; });
     if(!b) return;
-    b.result = { winnerId: $('rsWinner').value, score: $('rsScore').value.trim() };
-    const mov = applyLadderResult(b);
-    save();
-    closeModal('resultModal');
-    render();
 
-    if(mov && mov.moved){
-      const ganador = player(b.ladder.challengerId);
-      toast('Resultado guardado. ' + (ganador ? ganador.name : 'El desafiante') +
-            ' sube del puesto #' + mov.from + ' al #' + mov.to + ' en la escalerilla.');
-    } else if(mov){
-      const defensor = player(b.ladder.defenderId);
-      toast('Resultado guardado. ' + (defensor ? defensor.name : 'El defensor') +
-            ' mantiene el puesto #' + mov.defended + '.');
+    this.disabled = true;
+    const antes = b.ladder ? ladderPos(b.clubId, $('rsWinner').value) : 0;
+    const res = await registerResult(bookingId, $('rsWinner').value, $('rsScore').value.trim());
+    this.disabled = false;
+
+    if(!res.ok){ toast(res.reason, true); return; }
+    closeModal('resultModal');
+
+    if(b.ladder){
+      const ganador = player($('rsWinner').value);
+      const ahora = ladderPos(b.clubId, $('rsWinner').value);
+      toast(ahora && antes && ahora < antes
+        ? 'Resultado guardado. ' + (ganador ? ganador.name : 'El desafiante') +
+          ' sube del puesto #' + antes + ' al #' + ahora + ' en la escalerilla.'
+        : 'Resultado guardado. La escalerilla no se mueve.');
     } else {
       toast('Resultado guardado.');
     }
@@ -3156,20 +2978,36 @@ function bindEvents(){
 /* =========================================================
    ARRANQUE
    ========================================================= */
-state = load();
-syncLadders();      // arma las escalerillas la primera vez y las mantiene al día
 initControls();
 bindEvents();
 renderNews();
+showAuth();
 
-// Sin sesión se muestra la pantalla de entrada; con sesión se entra derecho a la app.
-if(state.session && player(state.session.playerId)){
-  state.meId = state.session.playerId;
-  showApp();
-} else {
-  state.session = null;
-  showAuth();
+/* Cambios en vivo: si alguien te desafia, acepta o reserva, la vista se
+   actualiza sola sin recargar la pagina. */
+function listenForChanges(){
+  sb.channel('squashmatch')
+    .on('postgres_changes', { event:'*', schema:'public', table:'challenges' }, refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'bookings' },   refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'profiles' },   refresh)
+    .subscribe();
 }
+
+/* La sesion la administra Supabase: sobrevive a recargas y vuelve del rodeo de
+   Google por si sola. */
+sb.auth.onAuthStateChange(function(event, session){
+  if(session && !state.meId){
+    enterApp(session).then(listenForChanges);
+  } else if(!session && state.meId){
+    state.meId = null;
+    state.session = null;
+    showAuth();
+  }
+});
+
+sb.auth.getSession().then(function(res){
+  if(res.data.session) enterApp(res.data.session).then(listenForChanges);
+});
 
 })();
 </script>

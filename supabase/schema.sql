@@ -268,10 +268,29 @@ as $$
      );
 $$;
 
--- Desafíos: cada quien ve y crea los suyos.
+-- El administrador tiene lectura global (panel de solo lectura). No puede
+-- suplantar a nadie: eso exigiría la clave secreta, que nunca va en el navegador.
+-- El rol se asigna a mano en Table Editor → profiles → role = 'admin'; los
+-- jugadores no pueden cambiárselo porque 'role' está fuera del GRANT de UPDATE.
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles where id = auth.uid() and role = 'admin'
+  );
+$$;
+
+grant execute on function public.is_admin() to authenticated;
+
+-- Desafíos: cada quien ve y crea los suyos; el admin los ve todos.
 drop policy if exists challenges_read on public.challenges;
 create policy challenges_read on public.challenges
-  for select to authenticated using (from_id = auth.uid() or to_id = auth.uid());
+  for select to authenticated
+  using (from_id = auth.uid() or to_id = auth.uid() or public.is_admin());
 
 drop policy if exists challenges_insert on public.challenges;
 create policy challenges_insert on public.challenges
