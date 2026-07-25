@@ -601,11 +601,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         </div>
       </div>
 
-      <div class="field" id="fieldRank">
-        <label for="auRank">N.º ranking nacional</label>
-        <input id="auRank" type="number" min="1" max="999" placeholder="Opcional">
-        <span class="hint">Si no tienes, déjalo vacío.</span>
-      </div>
 
       <div class="btn-row" style="margin-top:6px">
         <button type="button" class="btn ghost" id="auBack">Volver</button>
@@ -650,7 +645,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <button class="tab" data-view="abiertas">Canchas abiertas <span class="badge" id="openBadge" style="display:none">0</span></button>
     <button class="tab" data-view="jugadores">Jugadores</button>
     <button class="tab" data-view="escalerilla">Escalerilla</button>
-    <button class="tab" data-view="ranking">Ranking nacional</button>
+    <button class="tab" data-view="ranking">Ranking</button>
     <button class="tab" data-view="canchas">Canchas</button>
     <button class="tab" data-view="perfil">Mi perfil</button>
     <button class="tab" data-view="admin" id="tabAdmin" hidden>Admin</button>
@@ -734,7 +729,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <div class="field">
         <label for="fSort">Ordenar por</label>
         <select id="fSort">
-          <option value="rank">Ranking nacional</option>
+          <option value="rank">Rating</option>
           <option value="name">Nombre</option>
           <option value="wins">Partidos ganados</option>
         </select>
@@ -825,10 +820,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
           <div class="field">
             <label for="cfCat">Categoría</label>
             <select id="cfCat"></select>
-          </div>
-          <div class="field">
-            <label for="cfRank">N.º ranking nacional</label>
-            <input id="cfRank" type="number" min="1" max="999" placeholder="Sin ranking">
           </div>
           <div class="field">
             <label for="cfClub">Club habitual</label>
@@ -947,8 +938,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <table>
         <thead>
           <tr>
-            <th style="width:64px">#</th>
+            <th style="width:56px">#</th>
             <th>Jugador</th>
+            <th class="num">Rating</th>
             <th>Categoría</th>
             <th>Club</th>
             <th class="num">PJ</th>
@@ -1168,7 +1160,8 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    modo que todos los jugadores ven lo mismo.
    ========================================================= */
 let state = {
-  clubs:[], players:[], requests:[], bookings:[], invites:[], ladders:{}, contacts:{},
+  clubs:[], players:[], requests:[], bookings:[], invites:[], ladders:{},
+  ratingHistory:[], contacts:{},
   meId:null, session:null, adminMode:false
 };
 
@@ -1184,7 +1177,8 @@ function mapProfile(row){
     id:row.id,
     name:row.name || '',
     category:row.category || '',
-    rank:row.national_rank,
+    rating:row.rating,
+    ratingMatches:row.rating_matches || 0,
     clubId:row.club_id,
     hand:row.hand || 'Diestro',
     comuna:row.comuna || '',
@@ -1235,14 +1229,24 @@ function mapInvite(row){
   };
 }
 
+/* El rating llegó después que el resto: si la base todavía no tiene esas
+   columnas, se piden los perfiles sin ellas y la app sigue funcionando. */
+async function fetchProfiles(){
+  const conRating = await sb.from('profiles').select(PROFILE_COLS + ',rating,rating_matches');
+  if(!conRating.error) return conRating;
+  console.warn('Rating no disponible:', conRating.error.message);
+  return await sb.from('profiles').select(PROFILE_COLS);
+}
+
 async function fetchAll(){
-  const [clubs, profiles, challenges, bookings, invites, ladders] = await Promise.all([
+  const [clubs, profiles, challenges, bookings, invites, ladders, ratings] = await Promise.all([
     sb.from('clubs').select('*').order('name'),
-    sb.from('profiles').select(PROFILE_COLS),
+    fetchProfiles(),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
     sb.from('bookings').select('*'),
     sb.from('open_invites').select('*').order('match_date'),
-    sb.from('ladder_members').select('*').order('position')
+    sb.from('ladder_members').select('*').order('position'),
+    sb.from('rating_history').select('*').order('created_at')
   ]);
 
   const err = clubs.error || profiles.error || challenges.error || bookings.error;
@@ -1255,6 +1259,8 @@ async function fetchAll(){
   state.players  = profiles.data.map(mapProfile);
   state.requests = challenges.data.map(mapChallenge);
   state.bookings = bookings.data.map(mapBooking);
+  state.ratingHistory = (ratings && !ratings.error) ? ratings.data : [];
+
   // Escalerillas: cada club con sus miembros en orden de puesto.
   state.ladders = {};
   if(ladders.error){
@@ -1331,6 +1337,20 @@ function setsFor(sets, gano){
   if(!sets) return '';
   const p = String(sets).split('-');
   return gano ? p[0] + '-' + p[1] : p[1] + '-' + p[0];
+}
+
+/** Rating del jugador; si aún no tiene partidos, es el de arranque de su categoría. */
+function ratingOf(id){
+  const p = player(id);
+  return p && p.rating ? p.rating : null;
+}
+
+/** Cuánto se movió en su último partido, para mostrar el +12 / -9. */
+function lastRatingChange(id){
+  const filas = state.ratingHistory.filter(function(h){ return h.player_id === id; });
+  if(!filas.length) return null;
+  const u = filas[filas.length - 1];
+  return u.rating_after - u.rating_before;
 }
 
 function initials(name){
@@ -1675,8 +1695,8 @@ function renderPlayers(){
   list.sort(function(a,b){
     if(sort === 'name') return a.name.localeCompare(b.name,'es');
     if(sort === 'wins') return statsOf(b.id).won - statsOf(a.id).won;
-    const ra = a.rank || 9999, rb = b.rank || 9999;
-    if(ra !== rb) return ra - rb;
+    const ra = a.rating || 0, rb = b.rating || 0;
+    if(ra !== rb) return rb - ra;              // mejor rating primero
     return a.name.localeCompare(b.name,'es');
   });
 
@@ -1703,7 +1723,7 @@ function renderPlayers(){
           '<div class="pname">'+esc(p.name)+(isMe?' <span class="chip" style="vertical-align:middle">tú</span>':'')+'</div>' +
           '<div class="pmeta">'+esc(c ? c.name + ' · ' + c.comuna : 'Sin club')+'</div>' +
         '</div>' +
-        '<div class="rank-pill"><b>'+(p.rank ? '#'+p.rank : '—')+'</b><span>ranking</span></div>' +
+        '<div class="rank-pill"><b>'+(p.rating || '—')+'</b><span>rating</span></div>' +
       '</div>' +
       '<div class="chips">' +
         '<span class="chip cat">'+esc(p.category)+'</span>' +
@@ -1855,25 +1875,29 @@ function renderRanking(){
   const cat = $('rCat').value;
   const list = state.players
     .filter(function(p){ return cat === 'todas' || p.category === cat; })
-    .sort(function(a,b){
-      const ra = a.rank || 9999, rb = b.rank || 9999;
-      if(ra !== rb) return ra - rb;
+    .sort(function(a, b){
+      const ra = a.rating || 0, rb = b.rating || 0;
+      if(ra !== rb) return rb - ra;
       return a.name.localeCompare(b.name,'es');
     });
 
-  $('rankBody').innerHTML = list.map(function(p){
+  $('rankBody').innerHTML = list.map(function(p, i){
     const c = club(p.clubId);
     const st = statsOf(p.id);
+    const dif = lastRatingChange(p.id);
     return '<tr'+(p.id === me().id ? ' class="me"' : '')+'>' +
-      '<td class="pos">'+(p.rank ? '#'+p.rank : '—')+'</td>' +
+      '<td class="pos">'+(i + 1)+'</td>' +
       '<td>'+esc(p.name)+'</td>' +
+      '<td class="num"><b>'+(p.rating || '—')+'</b>' +
+        (dif ? ' <span style="color:'+(dif > 0 ? 'var(--lime)' : 'var(--red)')+'">' +
+               (dif > 0 ? '+' : '') + dif + '</span>' : '') + '</td>' +
       '<td>'+esc(p.category)+'</td>' +
       '<td>'+esc(c ? c.name : '—')+'</td>' +
       '<td class="num">'+st.played+'</td>' +
       '<td class="num">'+st.won+'</td>' +
       '<td class="num">'+st.lost+'</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="7" style="color:var(--ink-faint)">Sin jugadores en esta categoría.</td></tr>';
+  }).join('') || '<tr><td colspan="8" style="color:var(--ink-faint)">Sin jugadores en esta categoría.</td></tr>';
 }
 
 /* ---------- Canchas abiertas ---------- */
@@ -2054,8 +2078,8 @@ function renderLadder(){
       '<div class="avatar' + (esMio ? '' : ' alt') + '">' + esc(initials(p.name)) + '</div>' +
       '<div class="grow">' +
         '<div class="row-title">' + esc(p.name) + ' <span class="chip cat">' + esc(p.category) + '</span></div>' +
-        '<div class="row-sub">' + (p.rank ? 'Ranking nacional #' + p.rank + ' · ' : '') +
-          st.won + 'G-' + st.lost + 'P en la app</div>' +
+        '<div class="row-sub">' + (p.rating ? p.rating + ' pts · ' : '') +
+          st.won + 'G-' + st.lost + 'P</div>' +
         (esObjetivo ? '<div class="ladder-note">A ' + (myPos - pos) +
           (myPos - pos === 1 ? ' puesto' : ' puestos') + ' sobre ti · dentro de tu rango</div>' : '') +
       '</div>' +
@@ -2227,7 +2251,7 @@ function categoryFamily(cat){
 /** Rivales sugeridos: misma categoría, luego categorías afines, y dentro de eso el
     ranking más cercano. */
 function suggestedRivals(p, n){
-  const myRank = p.rank || 9999;
+  const myRating = p.rating || 1200;
   const myFamily = categoryFamily(p.category);
   function afinidad(x){
     if(x.category === p.category) return 0;
@@ -2239,7 +2263,7 @@ function suggestedRivals(p, n){
     .sort(function(a,b){
       const fa = afinidad(a), fb = afinidad(b);
       if(fa !== fb) return fa - fb;
-      return Math.abs((a.rank||9999) - myRank) - Math.abs((b.rank||9999) - myRank);
+      return Math.abs((a.rating||1200) - myRating) - Math.abs((b.rating||1200) - myRating);
     })
     .slice(0, n);
 }
@@ -2414,7 +2438,7 @@ function renderHome(){
         '<div class="avatar alt">'+esc(initials(r.name))+'</div>' +
         '<div class="grow">' +
           '<div class="mini-name">'+esc(r.name)+'</div>' +
-          '<div class="mini-sub">'+esc(r.category)+(r.rank ? ' · #'+r.rank : '')+(c ? ' · '+esc(c.name) : '')+'</div>' +
+          '<div class="mini-sub">'+esc(r.category)+(r.rating ? ' · '+r.rating+' pts' : '')+(c ? ' · '+esc(c.name) : '')+'</div>' +
         '</div>' +
         '<button class="btn sm" data-challenge="'+r.id+'">Desafiar</button>' +
       '</div>';
@@ -2535,12 +2559,12 @@ function profileStats(pid){
   const topClubs = Object.keys(clubs).map(function(k){ return { id:k, n:clubs[k] }; })
     .sort(function(a,b){ return b.n - a.n; }).slice(0,4);
 
-  // Rendimiento contra jugadores mejor rankeados que uno
-  const myRank = mePlayer && mePlayer.rank ? mePlayer.rank : 9999;
+  // Rendimiento contra jugadores de mejor rating
+  const myRating = mePlayer && mePlayer.rating ? mePlayer.rating : 0;
   let vsBetter = 0, vsBetterWon = 0;
   played.forEach(function(b){
     const o = player(b.playerA === pid ? b.playerB : b.playerA);
-    if(o && o.rank && o.rank < myRank){
+    if(o && o.rating && o.rating > myRating){
       vsBetter++;
       if(b.result.winnerId === pid) vsBetterWon++;
     }
@@ -2612,7 +2636,9 @@ function renderHero(p, s){
         (prof.email ? ' · ' + esc(prof.email) : '') + '</div>' +
       '<div class="chips">'+chips+'</div>' +
     '</div>' +
-    '<div class="hero-rank"><b>'+(p.rank ? '#'+p.rank : '—')+'</b><span>ranking nacional</span></div>' +
+    '<div class="hero-rank"><b>'+(p.rating || '—')+'</b><span>rating' +
+      (p.ratingMatches ? ' · ' + p.ratingMatches + (p.ratingMatches === 1 ? ' partido' : ' partidos') : '') +
+      '</span></div>' +
   '</div>';
 }
 
@@ -2642,8 +2668,8 @@ function renderStatsPane(p, s){
     tile(s.played.length, 'Partidos jugados', 'Registrados en la app') +
     tile(s.won, 'Ganados', s.lost + ' perdidos', 'good') +
     tile(s.streak || '—', 'Racha actual', rachaTxt, s.streak && s.streakWin ? 'good' : (s.streak ? 'warn' : '')) +
-    tile(s.vsBetter ? s.vsBetterWon + '/' + s.vsBetter : '—', 'Vs. mejor ranking',
-         s.vsBetter ? 'Ganados contra rivales sobre ti' : 'Aún no juegas contra rivales mejor rankeados');
+    tile(s.vsBetter ? s.vsBetterWon + '/' + s.vsBetter : '—', 'Vs. mejor rating',
+         s.vsBetter ? 'Ganados contra rivales sobre ti' : 'Aún no juegas contra rivales de más rating');
 
   $('statMeter').innerHTML =
     '<div class="meter"><i style="width:'+s.winRate+'%"></i></div>' +
@@ -2734,7 +2760,6 @@ function fillConfig(p){
   const prof = profileOf(p);
   $('cfName').value = p.name;
   $('cfCat').value = p.category;
-  $('cfRank').value = p.rank || '';
   $('cfClub').value = p.clubId;
   $('cfHand').value = p.hand || 'Diestro';
   $('cfSince').value = prof.since;
@@ -2756,11 +2781,6 @@ async function saveConfig(){
   const name = $('cfName').value.trim();
   if(name.length < 3){ toast('Escribe tu nombre completo.', true); $('cfName').focus(); return; }
 
-  const rank = parseInt($('cfRank').value, 10);
-  if($('cfRank').value !== '' && (!isFinite(rank) || rank < 1 || rank > 999)){
-    toast('El ranking debe ser un número entre 1 y 999.', true); $('cfRank').focus(); return;
-  }
-
   const since = parseInt($('cfSince').value, 10);
   const thisYear = new Date().getFullYear();
   if($('cfSince').value !== '' && (!isFinite(since) || since < 1950 || since > thisYear)){
@@ -2771,7 +2791,6 @@ async function saveConfig(){
   const { error } = await sb.from('profiles').update({
     name:name,
     category:$('cfCat').value,
-    national_rank:($('cfRank').value !== '' ? rank : null),
     club_id:$('cfClub').value,
     hand:$('cfHand').value,
     playing_since:($('cfSince').value !== '' ? String(since) : ''),
@@ -2988,7 +3007,7 @@ function authReset(){
   authMode = null;
   $('authChoices').hidden = false;
   $('authForm').hidden = true;
-  ['auEmail','auPass','auName','auRank'].forEach(function(id){ $(id).value = ''; });
+  ['auEmail','auPass','auName'].forEach(function(id){ $(id).value = ''; });
 }
 
 function authShowFields(opts){
@@ -2996,7 +3015,6 @@ function authShowFields(opts){
   $('fieldPass').hidden    = !opts.pass;
   $('fieldName').hidden    = !opts.name;
   $('fieldProfile').hidden = !opts.profile;
-  $('fieldRank').hidden    = !opts.profile;
   $('auBack').hidden       = !!opts.noBack;
 }
 
@@ -3040,14 +3058,8 @@ async function submitAuth(){
     if(authMode === 'perfil'){
       const name = $('auName').value.trim();
       if(name.length < 3){ toast('Escribe tu nombre completo.', true); return; }
-      const rank = parseInt($('auRank').value, 10);
-      if($('auRank').value !== '' && (!isFinite(rank) || rank < 1 || rank > 999)){
-        toast('El ranking debe ser un numero entre 1 y 999.', true); return;
-      }
-
       const upd = await sb.from('profiles').update({
-        name:name, category:$('auCat').value, club_id:$('auClub').value,
-        national_rank:($('auRank').value !== '' ? rank : null)
+        name:name, category:$('auCat').value, club_id:$('auClub').value
       }).eq('id', state.meId);
       if(upd.error){ toast(upd.error.message, true); return; }
 

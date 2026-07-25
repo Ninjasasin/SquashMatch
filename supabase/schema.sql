@@ -630,6 +630,9 @@ begin
    where id = bk.id
   returning * into updated;
 
+  -- El rating se mueve solo con resultados confirmados por ambos.
+  perform public.apply_elo(updated.id);
+
   -- Escalerilla: si gano el desafiante, intercambian posiciones.
   if updated.ladder and not updated.ladder_applied then
     challenger := case when updated.ladder_defender = updated.player_b
@@ -666,6 +669,192 @@ grant execute on function public.accept_challenge(uuid) to authenticated;
 grant execute on function public.report_result(uuid, uuid, int, int) to authenticated;
 grant execute on function public.confirm_result(uuid, boolean) to authenticated;
 grant execute on function public.contact_of(uuid) to authenticated;
+
+-- =============================================================================
+-- 10b. RATING PROPIO (estilo Elo)
+-- Reemplaza al ranking nacional autodeclarado. Se mueve solo, con los resultados
+-- confirmados por ambos jugadores, y lo calcula el servidor.
+-- =============================================================================
+alter table public.profiles
+  add column if not exists rating         int,
+  add column if not exists rating_matches int not null default 0;
+
+create table if not exists public.rating_history (
+  id            uuid primary key default gen_random_uuid(),
+  player_id     uuid not null references public.profiles(id) on delete cascade,
+  booking_id    uuid references public.bookings(id) on delete cascade,
+  rating_before int not null,
+  rating_after  int not null,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists rating_history_player_idx
+  on public.rating_history (player_id, created_at);
+
+grant select on public.rating_history to authenticated;
+alter table public.rating_history enable row level security;
+
+drop policy if exists rating_history_read on public.rating_history;
+create policy rating_history_read on public.rating_history
+  for select to authenticated using (true);
+
+-- Punto de partida segun la categoria declarada: si todos partieran igual, el
+-- sistema tardaria meses en reflejar la realidad.
+create or replace function public.initial_rating(p_cat text)
+returns int
+language sql
+immutable
+as $$
+  select case p_cat
+    when 'Primera'        then 1600
+    when 'Segunda'        then 1450
+    when 'Tercera'        then 1300
+    when 'Cuarta'         then 1150
+    when 'Damas A'        then 1500
+    when 'Damas B'        then 1350
+    when 'Juvenil Sub-19' then 1350
+    when 'Máster +40'     then 1300
+    when 'Máster +50'     then 1250
+    else 1200
+  end;
+$$;
+
+-- Al completar el perfil, el jugador arranca con el rating de su categoria.
+create or replace function public.seed_rating()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.rating is null and new.category is not null then
+    new.rating := public.initial_rating(new.category);
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists profiles_seed_rating on public.profiles;
+create trigger profiles_seed_rating
+  before insert or update of category on public.profiles
+  for each row execute function public.seed_rating();
+
+update public.profiles
+   set rating = public.initial_rating(category)
+ where rating is null and category is not null;
+
+-- Aplica el resultado de un partido al rating de ambos.
+create or replace function public.apply_elo(p_booking uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  bk        public.bookings;
+  perdedor  uuid;
+  r_gan     int;
+  r_per     int;
+  n_gan     int;
+  n_per     int;
+  esperado  numeric;
+  margen    numeric;
+  k_gan     numeric;
+  k_per     numeric;
+  repetidos int;
+  delta_gan int;
+  delta_per int;
+begin
+  select * into bk from public.bookings where id = p_booking;
+  if bk is null or bk.result_status <> 'confirmado' or bk.winner_id is null then
+    return;
+  end if;
+  -- Un partido mueve el rating una sola vez.
+  if exists (select 1 from public.rating_history where booking_id = bk.id) then
+    return;
+  end if;
+
+  perdedor := case when bk.winner_id = bk.player_a then bk.player_b else bk.player_a end;
+
+  select coalesce(rating, initial_rating(category)), rating_matches
+    into r_gan, n_gan from public.profiles where id = bk.winner_id;
+  select coalesce(rating, initial_rating(category)), rating_matches
+    into r_per, n_per from public.profiles where id = perdedor;
+
+  if r_gan is null or r_per is null then
+    return;
+  end if;
+
+  -- Probabilidad de que ganara el que gano.
+  esperado := 1.0 / (1.0 + power(10.0, (r_per - r_gan) / 400.0));
+
+  -- El marcador pesa, pero suave: un 3-2 en squash puede ser un partidazo.
+  margen := case
+    when bk.sets_loser = 0 then 1.15
+    when bk.sets_loser = 1 then 1.00
+    else 0.85
+  end;
+
+  -- Menos movimiento cuando el sistema ya conoce al jugador.
+  k_gan := case when n_gan < 10 then 32 else 20 end;
+  k_per := case when n_per < 10 then 32 else 20 end;
+
+  -- Jugar muchas veces contra el mismo rival en poco tiempo rinde cada vez menos:
+  -- es la puerta natural para inflar el rating entre conocidos.
+  select count(*) into repetidos
+    from public.bookings b
+   where b.result_status = 'confirmado'
+     and b.id <> bk.id
+     and b.match_date > current_date - 30
+     and ((b.player_a = bk.player_a and b.player_b = bk.player_b)
+       or (b.player_a = bk.player_b and b.player_b = bk.player_a));
+  if repetidos >= 3 then
+    k_gan := k_gan * 0.5;
+    k_per := k_per * 0.5;
+  end if;
+
+  delta_gan := round(k_gan * margen * (1 - esperado));
+  delta_per := round(k_per * margen * (0 - (1 - esperado)));
+
+  update public.profiles
+     set rating = r_gan + delta_gan, rating_matches = n_gan + 1
+   where id = bk.winner_id;
+  update public.profiles
+     set rating = greatest(100, r_per + delta_per), rating_matches = n_per + 1
+   where id = perdedor;
+
+  insert into public.rating_history (player_id, booking_id, rating_before, rating_after)
+  values (bk.winner_id, bk.id, r_gan, r_gan + delta_gan),
+         (perdedor,     bk.id, r_per, greatest(100, r_per + delta_per));
+end $$;
+
+-- Rehace todos los ratings desde cero, en orden cronologico. Sirve para poner al
+-- dia los partidos que ya estaban cargados antes de existir el rating.
+create or replace function public.recalc_ratings()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fila  record;
+  total int := 0;
+begin
+  delete from public.rating_history;
+  update public.profiles
+     set rating = initial_rating(category), rating_matches = 0
+   where category is not null;
+
+  for fila in
+    select id from public.bookings
+     where result_status = 'confirmado' and winner_id is not null
+     order by match_date, match_time, created_at
+  loop
+    perform public.apply_elo(fila.id);
+    total := total + 1;
+  end loop;
+
+  return total;
+end $$;
+
+grant execute on function public.recalc_ratings() to authenticated;
 
 -- =============================================================================
 -- 11. CANCHAS ABIERTAS
@@ -913,5 +1102,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.ladder_members;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.rating_history;
 exception when duplicate_object then null;
 end $$;
