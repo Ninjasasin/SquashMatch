@@ -31,6 +31,19 @@ la reserva de cancha en el acto.
 - **Clubes y canchas** — dos clubes (Club Sirio y Santiago Squash) con dos canchas cada
   uno, Cancha 1 y Cancha 2. La grilla de canchas muestra el estado de cada una hora por
   hora, con quién juega en la que está ocupada, y oculta los bloques ya pasados.
+- **Escalerilla** — ranking interno de cada club, con todos sus jugadores del 1 al N:
+  - Cada jugador puede desafiar hasta **3 puestos hacia arriba** y ser desafiado por los
+    3 de abajo. El botón *Desafiar* solo aparece en esos tres rivales; el resto queda sin
+    acción, así no se puede desafiar fuera de rango.
+  - Si gana el desafiante, **intercambian posiciones**; si gana el defensor, la
+    escalerilla no se mueve. El movimiento se aplica al registrar el resultado.
+  - El partido se agenda y se reserva como cualquier otro, fijado al club de esa
+    escalerilla, y queda marcado como válido por ella.
+  - Si las posiciones cambian entre el envío y la respuesta y el desafío queda fuera de
+    rango, caduca indicando el motivo.
+  - El orden inicial es por categoría y luego por ranking nacional; de ahí en adelante lo
+    define la cancha. Al registrarse o cambiarse de club, el jugador entra al último
+    puesto de la escalerilla que corresponde.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
   cupo, e historial con registro de resultado y marcador.
 - **Mi perfil** — panel con el resumen del jugador, sus estadísticas y la edición de
@@ -59,6 +72,9 @@ archivo:
 - `courtFree()` / `freeCourt()` / `bookingsAt()` resuelven la disponibilidad real por club,
   fecha, hora y cancha.
 - `acceptRequest()` es la transacción: revalida y crea la reserva con la cancha asignada.
+- `syncLadders()` / `ladderTargets()` / `canChallengeLadder()` / `applyLadderResult()`
+  sostienen la escalerilla: mantienen cada lista al día con los socios del club, resuelven
+  el rango desafiable y aplican el intercambio de posiciones al cargar un resultado.
 
 Los datos se guardan en `localStorage` del navegador, bajo una clave versionada
 (`squashmatch-vN`). Al cambiar la semilla de datos se sube esa versión para que los
