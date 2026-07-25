@@ -1,8 +1,8 @@
 # SquashMatch
 
-Plataforma para jugadores de squash: busca rivales por categoría y ranking nacional,
-mándales un desafío para un día, hora y club determinados, y al aceptarlo se genera
-la reserva de cancha en el acto.
+Plataforma para jugadores de squash: busca rivales por categoría y rating, mándales un
+desafío para un día, hora y club determinados, y al aceptarlo se genera la reserva de
+cancha en el acto.
 
 **App publicada:** [squash-match.vercel.app](https://squash-match.vercel.app/)
 
@@ -30,12 +30,12 @@ archivo con doble clic ya no sirve.
   o rechazados, recordatorios de partidos dentro de 48 horas y resultados por registrar),
   sus últimos 3 partidos con marcador, accesos directos para desafiar y un enlace a las
   estadísticas completas. El bloque de desafío rápido sugiere tres rivales de su misma
-  categoría o de categorías afines, con el ranking más cercano al suyo. Al final hay una
+  categoría o de categorías afines, con el rating más cercano al suyo. Al final hay una
   sección de noticias del circuito PSA: al hacer clic en la miniatura o el titular se abre
   la nota breve en español, con enlace a la fuente original.
 - **Directorio de jugadores** — búsqueda por nombre o club, filtros por categoría
   (Primera a Cuarta, Damas A/B, Juvenil Sub-19, Máster +40/+50) y por club, con orden
-  por ranking nacional, nombre o partidos ganados.
+  por rating, nombre o partidos ganados.
 - **Canchas abiertas** — para cuando tienes la hora y no el rival, que es el desorden
   que hoy se resuelve a los gritos en el grupo de WhatsApp del club. Publicas club, día,
   hora y, si quieres, cancha y la categoría de rival que buscas; la publicación queda
@@ -90,11 +90,26 @@ archivo con doble clic ya no sirve.
   - *Estadísticas*: efectividad, racha actual, últimos cinco resultados, partidos por mes
     (gráfico), rivales más frecuentes, clubes donde más juega, rendimiento contra rivales
     mejor rankeados y actividad de desafíos enviados/recibidos.
-  - *Mis datos*: nombre, categoría, ranking, club, mano hábil, año desde que juega,
+  - *Mis datos*: nombre, categoría, club, mano hábil, año desde que juega,
     contacto (correo, teléfono, comuna), días y horario en que puede jugar, y una nota
     para sus rivales. La disponibilidad aparece en su tarjeta del directorio y el
     contacto se muestra al rival en los partidos ya reservados, para coordinar.
-- **Ranking nacional** por categoría, con el récord de cada jugador.
+- **Rating de los jugadores** — un número que refleja el nivel y se mueve solo con los
+  resultados confirmados, al estilo del Elo del ajedrez y de chess.com. Reemplaza al
+  ranking nacional autodeclarado, que cualquiera podía inflar.
+  - Cada jugador arranca con el rating de su categoría (Primera 1600, Segunda 1450, y así)
+    en vez de partir todos iguales.
+  - Ganarle a alguien muy superior suma mucho; ganarle a alguien muy por debajo, casi
+    nada. A 800 puntos de diferencia el intercambio es cero: en la práctica, un amistoso.
+  - El marcador pesa suave (3-0 vale 1,15; 3-1 vale 1,0; 3-2 vale 0,85), porque en squash
+    un 3-2 puede ser un partidazo.
+  - El intercambio es **de suma cero**: lo que uno gana, el otro lo pierde, así que el
+    promedio del circuito nunca se infla.
+  - Jugar más de tres veces contra el mismo rival en 30 días vale la mitad, que es la
+    puerta natural para inflar el rating entre conocidos.
+  - La pestaña **Ranking** ordena por rating y muestra cuánto se movió cada uno en su
+    último partido. La explicación completa, con tablas y ejemplos, está en
+    [`docs/rating-squashmatch.docx`](docs/rating-squashmatch.docx).
 - **Panel de administración** de solo lectura para las cuentas con `role = 'admin'`:
   totales de cuentas, desafíos y reservas, y el listado de jugadores registrados.
 
@@ -125,6 +140,11 @@ Lo que corre en el servidor, porque es donde se puede garantizar:
   la cierra creando la reserva o la devuelve a la lista si el autor rechaza. Validan lo
   mismo que `accept_challenge()`: horario, que ninguno de los dos tenga otro partido y la
   disponibilidad de cancha.
+- `apply_elo()` mueve el rating de ambos jugadores, y corre dentro de `confirm_result()`:
+  el rating solo cambia con resultados confirmados por los dos, nunca desde el navegador.
+  `recalc_ratings()` rehace todos los ratings desde cero en orden cronológico.
+- `join_ladder()` / `leave_ladder()` inscriben o retiran al jugador de la escalerilla de un
+  club; puede estar en varias a la vez.
 - `report_result()` recibe el resultado de cualquiera de los dos jugadores y lo deja
   *por confirmar*; `confirm_result()` solo puede ejecutarla el rival, y es la que aplica
   el intercambio de posiciones de la escalerilla.
@@ -144,7 +164,7 @@ Supabase y el acceso con Google exige un dominio autorizado.
 ## Datos de prueba
 
 [`supabase/seed-demo.sql`](supabase/seed-demo.sql) crea 12 jugadores repartidos en los dos
-clubes, con perfil, categoría, ranking y 18 partidos ya confirmados, para poder mostrar la
+clubes, con perfil, categoría y 18 partidos ya confirmados, para poder mostrar la
 app con contenido. Se corre en el SQL Editor **después** de `schema.sql`.
 
 Las cuentas quedan como `nombre@squash.cl` — camila, rodrigo, joaquin, sebastian,
