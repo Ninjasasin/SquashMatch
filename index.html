@@ -113,6 +113,12 @@ main{max-width:1200px;margin:0 auto;padding:26px 20px 70px}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--lime-dark)}
 .field .hint{font-size:11px;color:var(--ink-faint)}
 
+.filter-actions{
+  grid-column:1 / -1;display:flex;align-items:center;gap:10px;justify-content:flex-end;
+  border-top:1px solid var(--line-soft);padding-top:14px;margin-top:2px;
+}
+.filter-actions .hint{margin-right:auto;font-size:12.5px}
+
 /* ---------- Cards de jugador ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .pcard{
@@ -740,6 +746,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
           <option value="wins">Partidos ganados</option>
         </select>
       </div>
+      <div class="filter-actions">
+        <span class="hint" id="fState"></span>
+        <button class="btn ghost sm" id="fClear">Limpiar</button>
+        <button class="btn primary sm" id="fApply">Aplicar</button>
+      </div>
     </div>
     <p class="section-title" id="playersCount"></p>
     <div class="grid" id="playersGrid"></div>
@@ -876,17 +887,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
             <label class="day"><input type="checkbox" value="Dom"><span>Dom</span></label>
           </div>
         </div>
-        <div class="form-grid" style="margin-top:14px">
-          <div class="field">
-            <label for="cfFranja">Horario preferido</label>
-            <select id="cfFranja">
-              <option value="">Cualquiera</option>
-              <option value="Mañana">Mañana (07:00–12:00)</option>
-              <option value="Mediodía">Mediodía (12:00–15:00)</option>
-              <option value="Tarde">Tarde (15:00–19:00)</option>
-              <option value="Noche">Noche (19:00–22:00)</option>
-            </select>
+        <div class="field" style="margin-top:14px">
+          <label>Horarios en que puedes jugar</label>
+          <div class="days" id="cfFranjas">
+            <label class="day"><input type="checkbox" value="Mañana"><span>Mañana · 07 a 12</span></label>
+            <label class="day"><input type="checkbox" value="Mediodía"><span>Mediodía · 12 a 15</span></label>
+            <label class="day"><input type="checkbox" value="Tarde"><span>Tarde · 15 a 19</span></label>
+            <label class="day"><input type="checkbox" value="Noche"><span>Noche · 19 a 22</span></label>
           </div>
+          <span class="hint">Puedes marcar más de uno. Si no marcas ninguno, cualquier horario te sirve.</span>
         </div>
         <div class="field" style="margin-top:14px">
           <label for="cfBio">Nota para tus rivales</label>
@@ -1681,11 +1690,34 @@ function renderBadges(){
 }
 
 /* ---------- Jugadores ---------- */
+/* Los filtros se aplican al apretar el boton, no mientras se escribe: asi el
+   listado no salta bajo el cursor y se pueden combinar varios criterios antes de
+   buscar. Lo aplicado vive aca, separado de lo que hay escrito en los campos. */
+let filtroJugadores = { q:'', cat:'todas', club:'todos', sort:'rank' };
+
+function aplicarFiltros(){
+  filtroJugadores = {
+    q: $('fSearch').value.trim().toLowerCase(),
+    cat: $('fCat').value,
+    club: $('fClub').value,
+    sort: $('fSort').value
+  };
+  renderPlayers();
+}
+
+function limpiarFiltros(){
+  $('fSearch').value = '';
+  $('fCat').value = 'todas';
+  $('fClub').value = 'todos';
+  $('fSort').value = 'rank';
+  aplicarFiltros();
+}
+
 function renderPlayers(){
-  const q = $('fSearch').value.trim().toLowerCase();
-  const cat = $('fCat').value;
-  const cl = $('fClub').value;
-  const sort = $('fSort').value;
+  const q = filtroJugadores.q;
+  const cat = filtroJugadores.cat;
+  const cl = filtroJugadores.club;
+  const sort = filtroJugadores.sort;
 
   let list = state.players.filter(function(p){
     if(cat !== 'todas' && p.category !== cat) return false;
@@ -1707,6 +1739,14 @@ function renderPlayers(){
   });
 
   $('playersCount').textContent = list.length + (list.length === 1 ? ' jugador' : ' jugadores');
+
+  const activos = [];
+  if(q) activos.push('"' + q + '"');
+  if(cat !== 'todas') activos.push(cat);
+  if(cl !== 'todos'){ const c = club(cl); if(c) activos.push(c.name); }
+  $('fState').textContent = activos.length
+    ? 'Filtrando por ' + activos.join(' · ')
+    : 'Sin filtros: se muestran todos los jugadores';
 
   if(!list.length){
     $('playersGrid').innerHTML = '<div class="empty">No hay jugadores con esos filtros.</div>';
@@ -2524,7 +2564,11 @@ function availabilityText(p){
   const prof = profileOf(p);
   if(!prof.days.length && !prof.franja) return '';
   const dias = prof.days.length === 7 ? 'Todos los días' : prof.days.join(' · ');
-  return [dias, prof.franja].filter(Boolean).join(' · ');
+  // Las franjas se unen con "y" para que no se confundan con los días.
+  const franjas = prof.franja
+    ? prof.franja.split(',').map(function(f){ return f.trim(); }).filter(Boolean).join(' y ')
+    : '';
+  return [dias, franjas].filter(Boolean).join(' · ');
 }
 
 /** Métricas del jugador derivadas de sus partidos y desafíos. */
@@ -2772,7 +2816,10 @@ function fillConfig(p){
   $('cfEmail').value = prof.email;
   $('cfPhone').value = prof.phone;
   $('cfComuna').value = prof.comuna;
-  $('cfFranja').value = prof.franja;
+  const franjas = prof.franja ? prof.franja.split(',').map(function(f){ return f.trim(); }) : [];
+  document.querySelectorAll('#cfFranjas input').forEach(function(i){
+    i.checked = franjas.indexOf(i.value) > -1;
+  });
   $('cfBio').value = prof.bio;
   document.querySelectorAll('#cfDays input').forEach(function(i){
     i.checked = prof.days.indexOf(i.value) > -1;
@@ -2802,7 +2849,8 @@ async function saveConfig(){
     playing_since:($('cfSince').value !== '' ? String(since) : ''),
     phone:$('cfPhone').value.trim(),
     comuna:$('cfComuna').value.trim(),
-    preferred_slot:$('cfFranja').value,
+    preferred_slot:Array.prototype.slice.call(document.querySelectorAll('#cfFranjas input:checked'))
+      .map(function(i){ return i.value; }).join(', '),
     bio:$('cfBio').value.trim(),
     available_days:Array.prototype.slice.call(document.querySelectorAll('#cfDays input:checked'))
       .map(function(i){ return i.value; })
@@ -3322,9 +3370,11 @@ function bindEvents(){
     toast('Cambios descartados.');
   });
 
-  // Filtros
-  ['fSearch','fCat','fClub','fSort'].forEach(function(id){
-    $(id).addEventListener('input', renderPlayers);
+  // Filtros: solo se aplican al apretar Aplicar (o Enter en la búsqueda)
+  $('fApply').addEventListener('click', aplicarFiltros);
+  $('fClear').addEventListener('click', limpiarFiltros);
+  $('fSearch').addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ e.preventDefault(); aplicarFiltros(); }
   });
   $('rCat').addEventListener('change', renderRanking);
   $('lClub').addEventListener('change', renderLadder);
