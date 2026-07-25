@@ -3452,6 +3452,7 @@ function listenForChanges(){
     .on('postgres_changes', { event:'*', schema:'public', table:'challenges' }, refresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'bookings' },   refresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'profiles' },   refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'open_invites' }, refresh)
     .subscribe();
 }
 
