@@ -792,9 +792,13 @@ begin
     else 0.85
   end;
 
-  -- Menos movimiento cuando el sistema ya conoce al jugador.
-  k_gan := case when n_gan < 10 then 32 else 20 end;
-  k_per := case when n_per < 10 then 32 else 20 end;
+  -- Menos movimiento cuando el sistema ya conoce al jugador. Se usa el mismo K
+  -- para los dos (el menor) para que el intercambio sea estrictamente de suma
+  -- cero: lo que uno gana, el otro lo pierde. Con K distinto por jugador se
+  -- crearian puntos de la nada y el promedio del circuito se inflaria.
+  k_gan := least(case when n_gan < 10 then 32 else 20 end,
+                 case when n_per < 10 then 32 else 20 end);
+  k_per := k_gan;
 
   -- Jugar muchas veces contra el mismo rival en poco tiempo rinde cada vez menos:
   -- es la puerta natural para inflar el rating entre conocidos.
