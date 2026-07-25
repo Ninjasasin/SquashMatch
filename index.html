@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SquashMatch — Desafía, agenda y reserva</title>
+<style>
+:root{
+  --bg:#0b0c0b;
+  --panel:#141614;
+  --panel-2:#1c1f1c;
+  --line:#2a2e2a;
+  --line-soft:#222622;
+  --ink:#f2f4f0;
+  --ink-dim:#a8b0a4;
+  --ink-faint:#6d756a;
+  --lime:#c9f24a;
+  --lime-dark:#9dbf2e;
+  --amber:#ff8a3d;
+  --red:#ff5c5c;
+  --blue:#5cc8ff;
+  --shadow:0 10px 30px rgba(0,0,0,.45);
+  --radius:14px;
+  --font:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(900px 500px at 12% -8%, rgba(201,242,74,.10), transparent 60%),
+    radial-gradient(700px 400px at 95% 0%, rgba(255,138,61,.08), transparent 55%),
+    var(--bg);
+  color:var(--ink);
+  font-family:var(--font);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit}
+input,select,textarea{font-family:inherit}
+
+/* ---------- Header ---------- */
+.topbar{
+  position:sticky;top:0;z-index:40;
+  background:rgba(11,12,11,.86);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.topbar-in{
+  max-width:1200px;margin:0 auto;padding:14px 20px;
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:11px;margin-right:auto}
+.ball{
+  width:30px;height:30px;border-radius:50%;
+  background:radial-gradient(circle at 32% 30%, #3a3f38, #101210 70%);
+  border:1px solid #3a3f38;position:relative;flex:none;
+}
+.ball::after{
+  content:"";position:absolute;top:7px;left:7px;width:7px;height:7px;border-radius:50%;
+  background:var(--lime);box-shadow:0 0 10px rgba(201,242,74,.8);
+}
+.brand h1{font-size:19px;margin:0;letter-spacing:-.4px;font-weight:700}
+.brand span{display:block;font-size:11px;color:var(--ink-faint);letter-spacing:.9px;text-transform:uppercase;margin-top:1px}
+.who{display:flex;align-items:center;gap:10px}
+.who label{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.7px}
+.who select{
+  background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+  border-radius:10px;padding:9px 12px;font-size:14px;min-width:190px;
+}
+.who select:focus{outline:none;border-color:var(--lime-dark)}
+
+/* ---------- Tabs ---------- */
+.tabs{max-width:1200px;margin:0 auto;padding:0 20px;display:flex;gap:4px;overflow-x:auto}
+.tab{
+  background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--ink-dim);padding:13px 15px;font-size:14px;font-weight:600;
+  cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:8px;
+}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--lime);border-bottom-color:var(--lime)}
+.badge{
+  background:var(--amber);color:#1a1200;border-radius:99px;
+  font-size:11px;font-weight:800;padding:1px 7px;min-width:19px;text-align:center;
+}
+
+/* ---------- Layout ---------- */
+main{max-width:1200px;margin:0 auto;padding:26px 20px 70px}
+.view{display:none}
+.view.active{display:block}
+.section-title{font-size:13px;text-transform:uppercase;letter-spacing:1.1px;color:var(--ink-faint);margin:0 0 12px;font-weight:700}
+.empty{
+  border:1px dashed var(--line);border-radius:var(--radius);
+  padding:34px 20px;text-align:center;color:var(--ink-faint);font-size:14px;
+}
+
+/* ---------- Filtros ---------- */
+.filters{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;
+}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink-faint);font-weight:700}
+.field input,.field select,.field textarea{
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+  border-radius:10px;padding:11px 12px;font-size:14px;width:100%;
+}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--lime-dark)}
+.field .hint{font-size:11px;color:var(--ink-faint)}
+
+/* ---------- Cards de jugador ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.pcard{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;display:flex;flex-direction:column;gap:13px;transition:border-color .15s, transform .15s;
+}
+.pcard:hover{border-color:#3b4139;transform:translateY(-2px)}
+.pcard.is-me{border-color:var(--lime-dark);background:linear-gradient(180deg,rgba(201,242,74,.06),transparent 60%),var(--panel)}
+.phead{display:flex;gap:12px;align-items:center}
+.avatar{
+  width:46px;height:46px;border-radius:12px;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:16px;color:#0e1005;
+  background:linear-gradient(135deg,var(--lime),var(--lime-dark));
+}
+.avatar.alt{background:linear-gradient(135deg,var(--amber),#d9631f);color:#1c0d00}
+.pname{font-size:16px;font-weight:700;line-height:1.2}
+.pmeta{font-size:12px;color:var(--ink-dim);margin-top:3px}
+.rank-pill{
+  margin-left:auto;flex:none;text-align:center;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:6px 9px;
+}
+.rank-pill b{display:block;font-size:15px;color:var(--lime);line-height:1}
+.rank-pill span{font-size:9px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  font-size:11px;padding:4px 9px;border-radius:99px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink-dim);
+}
+.chip.cat{border-color:rgba(201,242,74,.35);color:var(--lime);background:rgba(201,242,74,.08)}
+.stats{display:flex;gap:16px;font-size:12px;color:var(--ink-dim);border-top:1px solid var(--line-soft);padding-top:11px}
+.stats b{color:var(--ink);font-size:14px}
+
+/* ---------- Botones ---------- */
+.btn{
+  border:1px solid var(--line);background:var(--panel-2);color:var(--ink);
+  border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;
+  transition:background .15s,border-color .15s,opacity .15s;
+}
+.btn:hover{background:#252a24}
+.btn.primary{background:var(--lime);color:#131700;border-color:var(--lime)}
+.btn.primary:hover{background:#d6ff5c}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--red);border-color:rgba(255,92,92,.35)}
+.btn.danger:hover{background:rgba(255,92,92,.1)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:7px 11px;font-size:12px}
+.btn.block{width:100%}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- Listas (solicitudes / partidos) ---------- */
+.list{display:flex;flex-direction:column;gap:12px;margin-bottom:28px}
+.row{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:15px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+}
+.row .grow{flex:1;min-width:200px}
+.row-title{font-size:15px;font-weight:700}
+.row-sub{font-size:12.5px;color:var(--ink-dim);margin-top:4px;line-height:1.5}
+.row-sub b{color:var(--ink)}
+.msg{
+  margin-top:8px;font-size:12.5px;color:var(--ink-dim);font-style:italic;
+  border-left:2px solid var(--line);padding-left:10px;
+}
+.state{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;padding:4px 9px;border-radius:99px}
+.state.pend{background:rgba(255,138,61,.13);color:var(--amber)}
+.state.ok{background:rgba(201,242,74,.13);color:var(--lime)}
+.state.no{background:rgba(255,92,92,.13);color:var(--red)}
+.state.info{background:rgba(92,200,255,.13);color:var(--blue)}
+.court-tag{
+  font-size:12px;font-weight:700;color:var(--lime);
+  background:rgba(201,242,74,.08);border:1px solid rgba(201,242,74,.3);
+  border-radius:9px;padding:7px 11px;text-align:center;line-height:1.35;
+}
+.court-tag small{display:block;font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.6px;font-weight:700}
+
+/* ---------- Tabla ranking ---------- */
+.tablewrap{
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+/* Solo el ranking necesita ancho mínimo: son 7 columnas y apretadas no se leen. */
+#view-ranking table{min-width:560px}
+th{
+  background:var(--panel-2);text-align:left;padding:11px 14px;font-size:11px;
+  text-transform:uppercase;letter-spacing:.7px;color:var(--ink-faint);font-weight:700;
+}
+td{padding:12px 14px;border-top:1px solid var(--line-soft);white-space:nowrap}
+td.wrap{white-space:normal}
+tbody tr:hover{background:rgba(255,255,255,.02)}
+tr.me td{background:rgba(201,242,74,.06)}
+.pos{font-weight:800;color:var(--lime)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- Modal ---------- */
+.overlay{
+  position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.65);
+  display:none;align-items:center;justify-content:center;padding:20px;overflow-y:auto;
+}
+.overlay.open{display:flex}
+.modal{
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  width:100%;max-width:520px;box-shadow:var(--shadow);margin:auto;
+}
+.modal-head{padding:20px 22px 14px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px}
+.modal-head h2{margin:0;font-size:18px}
+.modal-head p{margin:5px 0 0;font-size:13px;color:var(--ink-dim)}
+.x{margin-left:auto;background:none;border:none;color:var(--ink-faint);font-size:22px;cursor:pointer;line-height:1;padding:0 2px}
+.x:hover{color:var(--ink)}
+.modal-body{padding:20px 22px;display:grid;gap:14px}
+.modal-body .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.modal-foot{padding:16px 22px 20px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--line)}
+.avail{
+  font-size:12.5px;border-radius:10px;padding:11px 12px;border:1px solid var(--line);
+  background:var(--panel-2);color:var(--ink-dim);line-height:1.5;
+}
+.avail.ok{border-color:rgba(201,242,74,.3);color:var(--lime)}
+.avail.bad{border-color:rgba(255,92,92,.3);color:var(--red)}
+
+/* ---------- Toast ---------- */
+#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);z-index:90;
+  display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast{
+  background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--lime);
+  color:var(--ink);padding:12px 18px;border-radius:11px;font-size:13.5px;box-shadow:var(--shadow);max-width:90vw;
+}
+.toast.err{border-left-color:var(--red)}
+
+@media (max-width:820px){
+  .filters{grid-template-columns:1fr 1fr}
+  .modal-body .two{grid-template-columns:1fr}
+  .brand h1{font-size:17px}
+  .who select{min-width:150px}
+}
+@media (max-width:560px){
+  .topbar-in{padding:12px 14px;gap:10px}
+  .brand{width:100%;margin-right:0}
+  .who{width:100%}
+  .who label{display:none}                 /* el select se explica solo en pantalla chica */
+  .who select{flex:1;min-width:0}
+  #btnNewPlayer{white-space:nowrap;flex:none}
+  .tabs{padding:0 14px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{padding:12px 11px;font-size:13.5px}
+  main{padding:18px 14px 60px}
+  .filters{grid-template-columns:1fr 1fr;padding:14px;gap:10px}
+  #view-jugadores .filters .field:first-child{grid-column:1 / -1}  /* la búsqueda ocupa el ancho completo */
+  .grid{grid-template-columns:1fr}
+  .row{gap:11px}
+  .row .grow{min-width:150px}
+  .row .btn-row{width:100%}
+  .row .btn-row .btn{flex:1}
+  .modal-foot .btn{flex:1}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <div class="ball"></div>
+      <div>
+        <h1>SquashMatch</h1>
+        <span>Desafíos y reservas</span>
+      </div>
+    </div>
+    <div class="who">
+      <label for="meSelect">Entrar como</label>
+      <select id="meSelect"></select>
+      <button class="btn sm" id="btnNewPlayer">+ Jugador</button>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="jugadores">Jugadores</button>
+    <button class="tab" data-view="solicitudes">Solicitudes <span class="badge" id="reqBadge" style="display:none">0</span></button>
+    <button class="tab" data-view="partidos">Mis partidos <span class="badge" id="matchBadge" style="display:none">0</span></button>
+    <button class="tab" data-view="ranking">Ranking nacional</button>
+    <button class="tab" data-view="canchas">Canchas</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ JUGADORES ============ -->
+  <section class="view active" id="view-jugadores">
+    <div class="filters">
+      <div class="field">
+        <label for="fSearch">Buscar jugador</label>
+        <input id="fSearch" type="text" placeholder="Nombre o club…" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="fCat">Categoría</label>
+        <select id="fCat"></select>
+      </div>
+      <div class="field">
+        <label for="fClub">Club</label>
+        <select id="fClub"></select>
+      </div>
+      <div class="field">
+        <label for="fSort">Ordenar por</label>
+        <select id="fSort">
+          <option value="rank">Ranking nacional</option>
+          <option value="name">Nombre</option>
+          <option value="wins">Partidos ganados</option>
+        </select>
+      </div>
+    </div>
+    <p class="section-title" id="playersCount"></p>
+    <div class="grid" id="playersGrid"></div>
+  </section>
+
+  <!-- ============ SOLICITUDES ============ -->
+  <section class="view" id="view-solicitudes">
+    <p class="section-title">Desafíos recibidos</p>
+    <div class="list" id="reqIn"></div>
+    <p class="section-title">Desafíos enviados</p>
+    <div class="list" id="reqOut"></div>
+  </section>
+
+  <!-- ============ MIS PARTIDOS ============ -->
+  <section class="view" id="view-partidos">
+    <p class="section-title">Próximos partidos · reservas confirmadas</p>
+    <div class="list" id="matchNext"></div>
+    <p class="section-title">Historial</p>
+    <div class="list" id="matchPast"></div>
+  </section>
+
+  <!-- ============ RANKING ============ -->
+  <section class="view" id="view-ranking">
+    <div class="filters" style="grid-template-columns:1fr">
+      <div class="field">
+        <label for="rCat">Categoría</label>
+        <select id="rCat"></select>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:64px">#</th>
+            <th>Jugador</th>
+            <th>Categoría</th>
+            <th>Club</th>
+            <th class="num">PJ</th>
+            <th class="num">PG</th>
+            <th class="num">PP</th>
+          </tr>
+        </thead>
+        <tbody id="rankBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ CANCHAS ============ -->
+  <section class="view" id="view-canchas">
+    <div class="filters" style="grid-template-columns:1fr 1fr">
+      <div class="field">
+        <label for="cClub">Club</label>
+        <select id="cClub"></select>
+      </div>
+      <div class="field">
+        <label for="cDate">Fecha</label>
+        <input id="cDate" type="date">
+      </div>
+    </div>
+    <p class="section-title" id="courtsTitle"></p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:110px">Hora</th><th>Estado de canchas</th></tr></thead>
+        <tbody id="courtsBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- ============ MODAL DESAFÍO ============ -->
+<div class="overlay" id="challengeModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Desafiar a <span id="chName"></span></h2>
+        <p id="chSub"></p>
+      </div>
+      <button class="x" data-close="challengeModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="chClub">Club / sede</label>
+        <select id="chClub"></select>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="chDate">Fecha</label>
+          <input id="chDate" type="date">
+        </div>
+        <div class="field">
+          <label for="chTime">Hora</label>
+          <select id="chTime"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="chMsg">Mensaje (opcional)</label>
+        <textarea id="chMsg" rows="2" placeholder="Ej: partido amistoso, mejor de 5 games"></textarea>
+      </div>
+      <div class="avail" id="chAvail"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="challengeModal">Cancelar</button>
+      <button class="btn primary" id="chSend">Enviar desafío</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL NUEVO JUGADOR ============ -->
+<div class="overlay" id="playerModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Registrar jugador</h2>
+        <p>Se suma al directorio y puede desafiar y ser desafiado.</p>
+      </div>
+      <button class="x" data-close="playerModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="npName">Nombre y apellido</label>
+        <input id="npName" type="text" placeholder="Ej: Camila Rojas" autocomplete="off">
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="npCat">Categoría</label>
+          <select id="npCat"></select>
+        </div>
+        <div class="field">
+          <label for="npRank">N.º ranking nacional</label>
+          <input id="npRank" type="number" min="1" max="999" placeholder="Opcional">
+          <span class="hint">Déjalo vacío si aún no tiene.</span>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="npClub">Club habitual</label>
+          <select id="npClub"></select>
+        </div>
+        <div class="field">
+          <label for="npHand">Mano hábil</label>
+          <select id="npHand">
+            <option>Diestro</option>
+            <option>Zurdo</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="playerModal">Cancelar</button>
+      <button class="btn primary" id="npSave">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL RESULTADO ============ -->
+<div class="overlay" id="resultModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Registrar resultado</h2>
+        <p id="rsSub"></p>
+      </div>
+      <button class="x" data-close="resultModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="rsWinner">Ganador</label>
+        <select id="rsWinner"></select>
+      </div>
+      <div class="field">
+        <label for="rsScore">Marcador (opcional)</label>
+        <input id="rsScore" type="text" placeholder="Ej: 3-1 (11-8, 9-11, 11-6, 11-7)">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="resultModal">Cancelar</button>
+      <button class="btn primary" id="rsSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* =========================================================
+   CONSTANTES
+   ========================================================= */
+const STORE_KEY = 'squashmatch-v1';
+const CATEGORIES = ['Primera','Segunda','Tercera','Cuarta','Damas A','Damas B','Juvenil Sub-19','Máster +40','Máster +50'];
+const SLOTS = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
+const HORIZON_DAYS = 45; // ventana de agenda hacia adelante
+
+const CLUBS = [
+  { id:'c1', name:'Club Providencia',     comuna:'Providencia',  courts:4 },
+  { id:'c2', name:'Sport Français',       comuna:'Vitacura',     courts:3 },
+  { id:'c3', name:'Club Manquehue',       comuna:'Vitacura',     courts:5 },
+  { id:'c4', name:'Estadio Español',      comuna:'Las Condes',   courts:3 },
+  { id:'c5', name:'Club Palestino',       comuna:'La Reina',     courts:2 },
+  { id:'c6', name:'Squash Center Ñuñoa',  comuna:'Ñuñoa',        courts:4 }
+];
+
+const SEED_PLAYERS = [
+  ['Matías Fuentes','Primera',3,'c3','Diestro'],
+  ['Ignacio Zúñiga','Segunda',18,'c1','Diestro'],
+  ['Cristóbal Herrera','Primera',1,'c2','Zurdo'],
+  ['Rodrigo Vera','Primera',7,'c1','Diestro'],
+  ['Felipe Cárcamo','Segunda',12,'c4','Diestro'],
+  ['Sebastián Rojas','Segunda',24,'c6','Zurdo'],
+  ['Tomás Aguilera','Tercera',41,'c3','Diestro'],
+  ['Andrés Molina','Tercera',37,'c5','Diestro'],
+  ['Joaquín Silva','Tercera',52,'c1','Diestro'],
+  ['Pablo Navarrete','Cuarta',68,'c6','Zurdo'],
+  ['Diego Contreras','Cuarta',74,'c2','Diestro'],
+  ['Camila Rojas','Damas A',2,'c3','Diestro'],
+  ['Fernanda Lagos','Damas A',5,'c1','Zurdo'],
+  ['Antonia Pérez','Damas B',14,'c4','Diestro'],
+  ['Valentina Muñoz','Damas B',21,'c6','Diestro'],
+  ['Benjamín Torres','Juvenil Sub-19',4,'c2','Diestro'],
+  ['Lucas Ibáñez','Juvenil Sub-19',9,'c5','Diestro'],
+  ['Jorge Salazar','Máster +40',6,'c1','Diestro'],
+  ['Marcelo Díaz','Máster +40',11,'c3','Zurdo'],
+  ['Patricio Reyes','Máster +50',3,'c4','Diestro']
+];
+
+/* =========================================================
+   ESTADO
+   ========================================================= */
+let state = null;
+
+function uid(prefix){
+  return prefix + '_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+}
+
+function seed(){
+  const players = SEED_PLAYERS.map(function(p, i){
+    return { id:'p'+(i+1), name:p[0], category:p[1], rank:p[2], clubId:p[3], hand:p[4] };
+  });
+  return { players:players, requests:[], bookings:[], meId:'p2' };
+}
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && Array.isArray(parsed.players) && parsed.players.length) return parsed;
+    }
+  }catch(e){ /* almacenamiento no disponible o corrupto: partimos de cero */ }
+  return seed();
+}
+
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+}
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+function esc(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function $(id){ return document.getElementById(id); }
+
+function player(id){ return state.players.find(function(p){ return p.id === id; }) || null; }
+function club(id){ return CLUBS.find(function(c){ return c.id === id; }) || null; }
+function me(){ return player(state.meId) || state.players[0]; }
+
+function initials(name){
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  const a = parts[0] ? parts[0][0] : '';
+  const b = parts[1] ? parts[1][0] : '';
+  return ((a + b) || '?').toUpperCase();
+}
+
+function todayISO(){
+  const d = new Date();
+  return isoOf(d);
+}
+function isoOf(d){
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
+function maxISO(){
+  const d = new Date();
+  d.setDate(d.getDate() + HORIZON_DAYS);
+  return isoOf(d);
+}
+function parseISO(iso){
+  const p = iso.split('-');
+  return new Date(+p[0], +p[1]-1, +p[2]);
+}
+function fmtDate(iso){
+  const d = parseISO(iso);
+  const dias = ['dom','lun','mar','mié','jue','vie','sáb'];
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return dias[d.getDay()] + ' ' + d.getDate() + ' ' + meses[d.getMonth()];
+}
+/** Momento exacto del slot, para comparar pasado/futuro. */
+function slotDate(iso, time){
+  const d = parseISO(iso);
+  d.setHours(+time.slice(0,2), 0, 0, 0);
+  return d;
+}
+function isPast(iso, time){
+  return slotDate(iso, time).getTime() < Date.now();
+}
+
+/* =========================================================
+   MOTOR DE RESERVAS
+   ========================================================= */
+/** Reservas vigentes (no canceladas) en un club/fecha/hora. */
+function bookingsAt(clubId, date, time){
+  return state.bookings.filter(function(b){
+    return b.status === 'confirmada' && b.clubId === clubId && b.date === date && b.time === time;
+  });
+}
+/** Primera cancha libre del club en ese bloque, o 0 si no hay. */
+function freeCourt(clubId, date, time){
+  const c = club(clubId);
+  if(!c) return 0;
+  const taken = bookingsAt(clubId, date, time).map(function(b){ return b.court; });
+  for(let n = 1; n <= c.courts; n++){
+    if(taken.indexOf(n) === -1) return n;
+  }
+  return 0;
+}
+function freeCourtCount(clubId, date, time){
+  const c = club(clubId);
+  if(!c) return 0;
+  return c.courts - bookingsAt(clubId, date, time).length;
+}
+/** ¿El jugador ya tiene partido confirmado en ese bloque (en cualquier club)? */
+function playerBusy(playerId, date, time){
+  return state.bookings.some(function(b){
+    return b.status === 'confirmada' && b.date === date && b.time === time &&
+           (b.playerA === playerId || b.playerB === playerId);
+  });
+}
+
+/**
+ * Valida un bloque para dos jugadores. Devuelve {ok, court, reason}.
+ */
+function checkSlot(clubId, date, time, aId, bId){
+  if(!clubId || !date || !time) return { ok:false, reason:'Completa club, fecha y hora.' };
+  if(isPast(date, time)) return { ok:false, reason:'Ese horario ya pasó.' };
+  if(playerBusy(aId, date, time)) return { ok:false, reason:'Ya tienes un partido reservado en ese bloque.' };
+  if(playerBusy(bId, date, time)) return { ok:false, reason:'El otro jugador ya tiene un partido en ese bloque.' };
+  const court = freeCourt(clubId, date, time);
+  if(!court) return { ok:false, reason:'No quedan canchas disponibles en ese club a esa hora.' };
+  return { ok:true, court:court };
+}
+
+/* Estadísticas derivadas de los partidos con resultado */
+function statsOf(playerId){
+  let played = 0, won = 0;
+  state.bookings.forEach(function(b){
+    if(b.status !== 'confirmada' || !b.result) return;
+    if(b.playerA !== playerId && b.playerB !== playerId) return;
+    played++;
+    if(b.result.winnerId === playerId) won++;
+  });
+  return { played:played, won:won, lost:played - won };
+}
+
+/* =========================================================
+   ACCIONES
+   ========================================================= */
+function sendRequest(toId, clubId, date, time, msg){
+  const fromId = me().id;
+  const check = checkSlot(clubId, date, time, fromId, toId);
+  if(!check.ok) return { ok:false, reason:check.reason };
+
+  const dup = state.requests.some(function(r){
+    return r.status === 'pendiente' && r.date === date && r.time === time &&
+           ((r.fromId === fromId && r.toId === toId) || (r.fromId === toId && r.toId === fromId));
+  });
+  if(dup) return { ok:false, reason:'Ya existe un desafío pendiente con ese jugador para ese bloque.' };
+
+  state.requests.push({
+    id: uid('r'), fromId:fromId, toId:toId, clubId:clubId, date:date, time:time,
+    msg:(msg||'').trim(), status:'pendiente', createdAt:Date.now()
+  });
+  save();
+  return { ok:true };
+}
+
+/** Aceptar un desafío => reserva inmediata de cancha. */
+function acceptRequest(reqId){
+  const r = state.requests.find(function(x){ return x.id === reqId; });
+  if(!r || r.status !== 'pendiente') return { ok:false, reason:'La solicitud ya no está pendiente.' };
+
+  const check = checkSlot(r.clubId, r.date, r.time, r.fromId, r.toId);
+  if(!check.ok){
+    r.status = 'caducada';
+    r.note = check.reason;
+    save();
+    return { ok:false, reason:check.reason + ' El desafío quedó caducado.' };
+  }
+
+  const booking = {
+    id: uid('b'), requestId:r.id, clubId:r.clubId, court:check.court,
+    date:r.date, time:r.time, playerA:r.fromId, playerB:r.toId,
+    status:'confirmada', result:null, createdAt:Date.now()
+  };
+  state.bookings.push(booking);
+  r.status = 'aceptada';
+  r.bookingId = booking.id;
+
+  // Cualquier otro desafío pendiente de estos dos jugadores en el mismo bloque queda sin efecto.
+  state.requests.forEach(function(o){
+    if(o.id === r.id || o.status !== 'pendiente') return;
+    if(o.date !== r.date || o.time !== r.time) return;
+    const involved = [o.fromId, o.toId];
+    if(involved.indexOf(r.fromId) > -1 || involved.indexOf(r.toId) > -1){
+      o.status = 'caducada';
+      o.note = 'Uno de los jugadores reservó otro partido en ese bloque.';
+    }
+  });
+
+  save();
+  return { ok:true, booking:booking };
+}
+
+function rejectRequest(reqId){
+  const r = state.requests.find(function(x){ return x.id === reqId; });
+  if(r && r.status === 'pendiente'){ r.status = 'rechazada'; save(); }
+}
+function cancelRequest(reqId){
+  const r = state.requests.find(function(x){ return x.id === reqId; });
+  if(r && r.status === 'pendiente'){ r.status = 'cancelada'; save(); }
+}
+function cancelBooking(bookingId){
+  const b = state.bookings.find(function(x){ return x.id === bookingId; });
+  if(!b) return;
+  b.status = 'cancelada';
+  b.cancelledBy = me().id;
+  const r = state.requests.find(function(x){ return x.id === b.requestId; });
+  if(r) r.status = 'cancelada';
+  save();
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function render(){
+  renderMeSelect();
+  renderPlayers();
+  renderRequests();
+  renderMatches();
+  renderRanking();
+  renderCourts();
+  renderBadges();
+}
+
+function renderMeSelect(){
+  const sel = $('meSelect');
+  sel.innerHTML = state.players
+    .slice()
+    .sort(function(a,b){ return a.name.localeCompare(b.name,'es'); })
+    .map(function(p){
+      return '<option value="'+p.id+'">'+esc(p.name)+' · '+esc(p.category)+'</option>';
+    }).join('');
+  sel.value = me().id;
+}
+
+function renderBadges(){
+  const pend = state.requests.filter(function(r){ return r.status === 'pendiente' && r.toId === me().id; }).length;
+  const badge = $('reqBadge');
+  badge.textContent = pend;
+  badge.style.display = pend ? '' : 'none';
+
+  const next = myBookings().filter(function(b){ return !isPast(b.date, b.time); }).length;
+  const mb = $('matchBadge');
+  mb.textContent = next;
+  mb.style.display = next ? '' : 'none';
+}
+
+/* ---------- Jugadores ---------- */
+function renderPlayers(){
+  const q = $('fSearch').value.trim().toLowerCase();
+  const cat = $('fCat').value;
+  const cl = $('fClub').value;
+  const sort = $('fSort').value;
+
+  let list = state.players.filter(function(p){
+    if(cat !== 'todas' && p.category !== cat) return false;
+    if(cl !== 'todos' && p.clubId !== cl) return false;
+    if(q){
+      const c = club(p.clubId);
+      const hay = (p.name + ' ' + (c ? c.name : '') + ' ' + p.category).toLowerCase();
+      if(hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+
+  list.sort(function(a,b){
+    if(sort === 'name') return a.name.localeCompare(b.name,'es');
+    if(sort === 'wins') return statsOf(b.id).won - statsOf(a.id).won;
+    const ra = a.rank || 9999, rb = b.rank || 9999;
+    if(ra !== rb) return ra - rb;
+    return a.name.localeCompare(b.name,'es');
+  });
+
+  $('playersCount').textContent = list.length + (list.length === 1 ? ' jugador' : ' jugadores');
+
+  if(!list.length){
+    $('playersGrid').innerHTML = '<div class="empty">No hay jugadores con esos filtros.</div>';
+    return;
+  }
+
+  $('playersGrid').innerHTML = list.map(function(p){
+    const c = club(p.clubId);
+    const st = statsOf(p.id);
+    const isMe = p.id === me().id;
+    const pend = state.requests.some(function(r){
+      return r.status === 'pendiente' &&
+        ((r.fromId === me().id && r.toId === p.id) || (r.fromId === p.id && r.toId === me().id));
+    });
+    return '' +
+    '<article class="pcard'+(isMe?' is-me':'')+'">' +
+      '<div class="phead">' +
+        '<div class="avatar'+(isMe?'':' alt')+'">'+esc(initials(p.name))+'</div>' +
+        '<div>' +
+          '<div class="pname">'+esc(p.name)+(isMe?' <span class="chip" style="vertical-align:middle">tú</span>':'')+'</div>' +
+          '<div class="pmeta">'+esc(c ? c.name + ' · ' + c.comuna : 'Sin club')+'</div>' +
+        '</div>' +
+        '<div class="rank-pill"><b>'+(p.rank ? '#'+p.rank : '—')+'</b><span>ranking</span></div>' +
+      '</div>' +
+      '<div class="chips">' +
+        '<span class="chip cat">'+esc(p.category)+'</span>' +
+        '<span class="chip">'+esc(p.hand||'Diestro')+'</span>' +
+      '</div>' +
+      '<div class="stats">' +
+        '<span>PJ <b>'+st.played+'</b></span>' +
+        '<span>PG <b>'+st.won+'</b></span>' +
+        '<span>PP <b>'+st.lost+'</b></span>' +
+      '</div>' +
+      (isMe
+        ? '<button class="btn block" disabled>Este eres tú</button>'
+        : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
+    '</article>';
+  }).join('');
+}
+
+/* ---------- Solicitudes ---------- */
+function reqLine(r, dir){
+  const other = player(dir === 'in' ? r.fromId : r.toId);
+  const c = club(r.clubId);
+  const stateCls = { pendiente:'pend', aceptada:'ok', rechazada:'no', cancelada:'no', caducada:'no' }[r.status] || 'info';
+  const b = r.bookingId ? state.bookings.find(function(x){ return x.id === r.bookingId; }) : null;
+
+  let actions = '';
+  if(r.status === 'pendiente'){
+    actions = dir === 'in'
+      ? '<div class="btn-row"><button class="btn primary sm" data-accept="'+r.id+'">Aceptar y reservar</button>' +
+        '<button class="btn danger sm" data-reject="'+r.id+'">Rechazar</button></div>'
+      : '<div class="btn-row"><button class="btn danger sm" data-cancelreq="'+r.id+'">Retirar</button></div>';
+  } else if(r.status === 'aceptada' && b && b.status === 'confirmada'){
+    actions = '<div class="court-tag"><small>Reservado</small>Cancha '+b.court+'</div>';
+  }
+
+  return '' +
+  '<div class="row">' +
+    '<div class="avatar'+(dir === 'in' ? '' : ' alt')+'">'+esc(initials(other ? other.name : '??'))+'</div>' +
+    '<div class="grow">' +
+      '<div class="row-title">'+esc(other ? other.name : 'Jugador') +
+        ' <span class="chip cat">'+esc(other ? other.category : '')+'</span></div>' +
+      '<div class="row-sub"><b>'+fmtDate(r.date)+' · '+r.time+'</b> — '+esc(c ? c.name : '')+'</div>' +
+      (r.msg ? '<div class="msg">“'+esc(r.msg)+'”</div>' : '') +
+      (r.note ? '<div class="msg">'+esc(r.note)+'</div>' : '') +
+    '</div>' +
+    '<span class="state '+stateCls+'">'+esc(r.status)+'</span>' +
+    actions +
+  '</div>';
+}
+
+function renderRequests(){
+  const mine = me().id;
+  const ordered = state.requests.slice().sort(function(a,b){
+    if((a.status === 'pendiente') !== (b.status === 'pendiente')) return a.status === 'pendiente' ? -1 : 1;
+    return b.createdAt - a.createdAt;
+  });
+
+  const inc = ordered.filter(function(r){ return r.toId === mine; });
+  const out = ordered.filter(function(r){ return r.fromId === mine; });
+
+  $('reqIn').innerHTML = inc.length
+    ? inc.map(function(r){ return reqLine(r,'in'); }).join('')
+    : '<div class="empty">Nadie te ha desafiado todavía.</div>';
+  $('reqOut').innerHTML = out.length
+    ? out.map(function(r){ return reqLine(r,'out'); }).join('')
+    : '<div class="empty">No has enviado desafíos. Anda a <b>Jugadores</b> y desafía a alguien.</div>';
+}
+
+/* ---------- Partidos ---------- */
+function myBookings(){
+  const mine = me().id;
+  return state.bookings.filter(function(b){
+    return b.status === 'confirmada' && (b.playerA === mine || b.playerB === mine);
+  });
+}
+
+function matchLine(b, past){
+  const mine = me().id;
+  const other = player(b.playerA === mine ? b.playerB : b.playerA);
+  const c = club(b.clubId);
+  let right;
+  if(past){
+    if(b.result){
+      const won = b.result.winnerId === mine;
+      right = '<span class="state '+(won?'ok':'no')+'">'+(won?'ganado':'perdido')+'</span>' +
+              (b.result.score ? '<div class="row-sub" style="margin:0">'+esc(b.result.score)+'</div>' : '');
+    } else {
+      right = '<button class="btn sm" data-result="'+b.id+'">Registrar resultado</button>';
+    }
+  } else {
+    right = '<div class="court-tag"><small>'+esc(c ? c.comuna : '')+'</small>Cancha '+b.court+'</div>' +
+            '<button class="btn danger sm" data-cancelbooking="'+b.id+'">Cancelar</button>';
+  }
+
+  return '' +
+  '<div class="row">' +
+    '<div class="avatar alt">'+esc(initials(other ? other.name : '??'))+'</div>' +
+    '<div class="grow">' +
+      '<div class="row-title">vs '+esc(other ? other.name : 'Jugador') +
+        ' <span class="chip cat">'+esc(other ? other.category : '')+'</span></div>' +
+      '<div class="row-sub"><b>'+fmtDate(b.date)+' · '+b.time+'</b> — '+esc(c ? c.name : '')+'</div>' +
+    '</div>' +
+    right +
+  '</div>';
+}
+
+function renderMatches(){
+  const all = myBookings();
+  const next = all.filter(function(b){ return !isPast(b.date,b.time); })
+                  .sort(function(a,b){ return slotDate(a.date,a.time) - slotDate(b.date,b.time); });
+  const past = all.filter(function(b){ return isPast(b.date,b.time); })
+                  .sort(function(a,b){ return slotDate(b.date,b.time) - slotDate(a.date,a.time); });
+
+  $('matchNext').innerHTML = next.length
+    ? next.map(function(b){ return matchLine(b,false); }).join('')
+    : '<div class="empty">No tienes partidos agendados.</div>';
+  $('matchPast').innerHTML = past.length
+    ? past.map(function(b){ return matchLine(b,true); }).join('')
+    : '<div class="empty">Aún no hay partidos jugados.</div>';
+}
+
+/* ---------- Ranking ---------- */
+function renderRanking(){
+  const cat = $('rCat').value;
+  const list = state.players
+    .filter(function(p){ return cat === 'todas' || p.category === cat; })
+    .sort(function(a,b){
+      const ra = a.rank || 9999, rb = b.rank || 9999;
+      if(ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name,'es');
+    });
+
+  $('rankBody').innerHTML = list.map(function(p){
+    const c = club(p.clubId);
+    const st = statsOf(p.id);
+    return '<tr'+(p.id === me().id ? ' class="me"' : '')+'>' +
+      '<td class="pos">'+(p.rank ? '#'+p.rank : '—')+'</td>' +
+      '<td>'+esc(p.name)+'</td>' +
+      '<td>'+esc(p.category)+'</td>' +
+      '<td>'+esc(c ? c.name : '—')+'</td>' +
+      '<td class="num">'+st.played+'</td>' +
+      '<td class="num">'+st.won+'</td>' +
+      '<td class="num">'+st.lost+'</td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="7" style="color:var(--ink-faint)">Sin jugadores en esta categoría.</td></tr>';
+}
+
+/* ---------- Canchas ---------- */
+function renderCourts(){
+  const clubId = $('cClub').value;
+  const date = $('cDate').value || todayISO();
+  const c = club(clubId);
+  if(!c) return;
+
+  // Los bloques ya pasados no se muestran: no se pueden reservar y solo estorban.
+  const slots = SLOTS.filter(function(t){ return !isPast(date, t); });
+  const hidden = SLOTS.length - slots.length;
+
+  $('courtsTitle').textContent = c.name + ' · ' + c.courts + ' canchas · ' + fmtDate(date) +
+    (hidden ? ' · ' + hidden + (hidden === 1 ? ' bloque pasado oculto' : ' bloques pasados ocultos') : '');
+
+  if(!slots.length){
+    $('courtsBody').innerHTML = '<tr><td colspan="2" class="wrap" style="color:var(--ink-faint)">' +
+      'Ya no quedan bloques disponibles hoy. Elige otra fecha.</td></tr>';
+    return;
+  }
+
+  $('courtsBody').innerHTML = slots.map(function(t){
+    const busy = bookingsAt(clubId, date, t);
+    const free = c.courts - busy.length;
+    const cell = free === 0
+      ? '<span class="state no">sin cupos</span>'
+      : '<span class="state ok">'+free+' de '+c.courts+' libres</span>';
+    const detail = busy.map(function(b){
+      const a = player(b.playerA), bb = player(b.playerB);
+      return '<span class="chip">Cancha '+b.court+': '+esc((a?a.name:'?')+' vs '+(bb?bb.name:'?'))+'</span>';
+    }).join(' ');
+    return '<tr><td><b>'+t+'</b></td><td class="wrap"><div class="chips">'+cell+' '+detail+'</div></td></tr>';
+  }).join('');
+}
+
+/* =========================================================
+   MODALES
+   ========================================================= */
+let challengeTargetId = null;
+
+/** Próximo bloque razonable para proponer: hoy si aún queda hora (con 1h de margen), si no mañana. */
+function defaultSlot(){
+  const margin = Date.now() + 60*60*1000;
+  for(let d = 0; d < HORIZON_DAYS; d++){
+    const day = new Date();
+    day.setDate(day.getDate() + d);
+    const iso = isoOf(day);
+    const options = SLOTS.filter(function(t){ return slotDate(iso, t).getTime() > margin; });
+    if(!options.length) continue;
+    return { date:iso, time: options.indexOf('19:00') > -1 ? '19:00' : options[0] };
+  }
+  return { date: todayISO(), time:'19:00' };
+}
+
+function openModal(id){ $(id).classList.add('open'); }
+function closeModal(id){ $(id).classList.remove('open'); }
+
+function openChallenge(targetId){
+  const t = player(targetId);
+  if(!t) return;
+  challengeTargetId = targetId;
+  $('chName').textContent = t.name;
+  const c = club(t.clubId);
+  $('chSub').textContent = t.category + (t.rank ? ' · #'+t.rank+' nacional' : '') + (c ? ' · juega en '+c.name : '');
+  $('chClub').value = t.clubId;
+  // Mantiene la fecha/hora anterior si sigue siendo futura; si no, propone el próximo bloque.
+  if(!$('chDate').value || isPast($('chDate').value, $('chTime').value)){
+    const def = defaultSlot();
+    $('chDate').value = def.date;
+    $('chTime').value = def.time;
+  }
+  $('chMsg').value = '';
+  updateAvail();
+  openModal('challengeModal');
+}
+
+function updateAvail(){
+  const box = $('chAvail');
+  const clubId = $('chClub').value;
+  const date = $('chDate').value;
+  const time = $('chTime').value;
+  if(!challengeTargetId) return;
+
+  const check = checkSlot(clubId, date, time, me().id, challengeTargetId);
+  const c = club(clubId);
+  if(check.ok){
+    const free = freeCourtCount(clubId, date, time);
+    box.className = 'avail ok';
+    box.innerHTML = '✓ Disponible: ' + free + ' de ' + c.courts + ' canchas libres en ' + esc(c.name) +
+                    ' el ' + fmtDate(date) + ' a las ' + time + '.<br>Al aceptar, se reserva la cancha ' + check.court + ' automáticamente.';
+  } else {
+    box.className = 'avail bad';
+    box.textContent = '✕ ' + check.reason;
+  }
+  $('chSend').disabled = !check.ok;
+}
+
+function openResult(bookingId){
+  const b = state.bookings.find(function(x){ return x.id === bookingId; });
+  if(!b) return;
+  const a = player(b.playerA), bb = player(b.playerB);
+  const c = club(b.clubId);
+  $('rsSub').textContent = (a?a.name:'?') + ' vs ' + (bb?bb.name:'?') + ' — ' + fmtDate(b.date) + ' ' + b.time + (c ? ' · '+c.name : '');
+  $('rsWinner').innerHTML =
+    '<option value="'+b.playerA+'">'+esc(a?a.name:'?')+'</option>' +
+    '<option value="'+b.playerB+'">'+esc(bb?bb.name:'?')+'</option>';
+  $('rsScore').value = '';
+  $('rsSave').dataset.booking = bookingId;
+  openModal('resultModal');
+}
+
+/* =========================================================
+   TOAST
+   ========================================================= */
+let toastTimer = null;
+function toast(msg, isErr){
+  const box = $('toast');
+  box.innerHTML = '<div class="toast'+(isErr?' err':'')+'">'+esc(msg)+'</div>';
+  box.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ box.classList.remove('show'); }, 3800);
+}
+
+/* =========================================================
+   INICIALIZACIÓN DE CONTROLES
+   ========================================================= */
+function fillSelect(sel, options, firstLabel, firstValue){
+  let html = firstLabel ? '<option value="'+firstValue+'">'+firstLabel+'</option>' : '';
+  html += options.map(function(o){ return '<option value="'+o.value+'">'+esc(o.label)+'</option>'; }).join('');
+  sel.innerHTML = html;
+}
+
+function clubOptions(){
+  return CLUBS.map(function(c){ return { value:c.id, label:c.name + ' · ' + c.comuna }; });
+}
+function catOptions(){
+  return CATEGORIES.map(function(c){ return { value:c, label:c }; });
+}
+
+function initControls(){
+  fillSelect($('fCat'), catOptions(), 'Todas las categorías', 'todas');
+  fillSelect($('rCat'), catOptions(), 'Todas las categorías', 'todas');
+  fillSelect($('npCat'), catOptions(), null, null);
+  fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
+  fillSelect($('cClub'), clubOptions(), null, null);
+  fillSelect($('chClub'), clubOptions(), null, null);
+  fillSelect($('npClub'), clubOptions(), null, null);
+
+  fillSelect($('chTime'), SLOTS.map(function(t){ return { value:t, label:t + ' hrs' }; }), null, null);
+  $('chTime').value = '19:00';
+
+  const t = todayISO(), mx = maxISO();
+  ['chDate','cDate'].forEach(function(id){
+    const el = $(id);
+    el.min = t; el.max = mx; el.value = t;
+  });
+}
+
+function bindEvents(){
+  // Tabs
+  $('tabs').addEventListener('click', function(e){
+    const tab = e.target.closest('.tab');
+    if(!tab) return;
+    document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('active'); });
+    document.querySelectorAll('.view').forEach(function(x){ x.classList.remove('active'); });
+    tab.classList.add('active');
+    $('view-' + tab.dataset.view).classList.add('active');
+  });
+
+  // Cambiar de jugador activo
+  $('meSelect').addEventListener('change', function(){
+    state.meId = this.value;
+    save();
+    render();
+    toast('Ahora estás como ' + me().name);
+  });
+
+  // Filtros
+  ['fSearch','fCat','fClub','fSort'].forEach(function(id){
+    $(id).addEventListener('input', renderPlayers);
+  });
+  $('rCat').addEventListener('change', renderRanking);
+  ['cClub','cDate'].forEach(function(id){ $(id).addEventListener('input', renderCourts); });
+
+  // Cierres de modal
+  document.addEventListener('click', function(e){
+    const closer = e.target.closest('[data-close]');
+    if(closer) closeModal(closer.dataset.close);
+    if(e.target.classList.contains('overlay')) e.target.classList.remove('open');
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(function(o){ o.classList.remove('open'); });
+  });
+
+  // Acciones delegadas
+  document.addEventListener('click', function(e){
+    const el = e.target.closest('[data-challenge],[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result]');
+    if(!el) return;
+    const d = el.dataset;
+
+    if(d.challenge){ openChallenge(d.challenge); return; }
+
+    if(d.accept){
+      const res = acceptRequest(d.accept);
+      render();
+      if(res.ok){
+        const c = club(res.booking.clubId);
+        toast('Reserva confirmada: ' + c.name + ', cancha ' + res.booking.court + ', ' + fmtDate(res.booking.date) + ' ' + res.booking.time + ' hrs.');
+      } else {
+        toast(res.reason, true);
+      }
+      return;
+    }
+    if(d.reject){ rejectRequest(d.reject); render(); toast('Desafío rechazado.'); return; }
+    if(d.cancelreq){ cancelRequest(d.cancelreq); render(); toast('Desafío retirado.'); return; }
+    if(d.cancelbooking){
+      if(confirm('¿Cancelar este partido y liberar la cancha?')){
+        cancelBooking(d.cancelbooking); render(); toast('Partido cancelado, cancha liberada.');
+      }
+      return;
+    }
+    if(d.result){ openResult(d.result); return; }
+  });
+
+  // Modal desafío
+  ['chClub','chDate','chTime'].forEach(function(id){ $(id).addEventListener('input', updateAvail); });
+  $('chSend').addEventListener('click', function(){
+    const res = sendRequest(challengeTargetId, $('chClub').value, $('chDate').value, $('chTime').value, $('chMsg').value);
+    if(res.ok){
+      closeModal('challengeModal');
+      render();
+      toast('Desafío enviado a ' + player(challengeTargetId).name + '. Queda pendiente de su respuesta.');
+    } else {
+      toast(res.reason, true);
+      updateAvail();
+    }
+  });
+
+  // Modal nuevo jugador
+  $('btnNewPlayer').addEventListener('click', function(){
+    $('npName').value = '';
+    $('npRank').value = '';
+    openModal('playerModal');
+  });
+  $('npSave').addEventListener('click', function(){
+    const name = $('npName').value.trim();
+    if(name.length < 3){ toast('Escribe el nombre completo del jugador.', true); return; }
+    const rank = parseInt($('npRank').value, 10);
+    const p = {
+      id: uid('p'), name:name, category:$('npCat').value,
+      rank: (isFinite(rank) && rank > 0) ? rank : null,
+      clubId: $('npClub').value, hand: $('npHand').value
+    };
+    state.players.push(p);
+    save();
+    closeModal('playerModal');
+    render();
+    toast(p.name + ' quedó registrado en ' + p.category + '.');
+  });
+
+  // Modal resultado
+  $('rsSave').addEventListener('click', function(){
+    const bookingId = this.dataset.booking;
+    const b = state.bookings.find(function(x){ return x.id === bookingId; });
+    if(!b) return;
+    b.result = { winnerId: $('rsWinner').value, score: $('rsScore').value.trim() };
+    save();
+    closeModal('resultModal');
+    render();
+    toast('Resultado guardado.');
+  });
+}
+
+/* =========================================================
+   ARRANQUE
+   ========================================================= */
+state = load();
+initControls();
+bindEvents();
+render();
+
+})();
+</script>
+</body>
+</html>
