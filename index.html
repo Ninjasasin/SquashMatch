@@ -282,6 +282,31 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 
 .link-row{display:flex;justify-content:flex-end;margin-top:12px}
 
+/* Noticias */
+.news{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:10px}
+.news-card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px;display:flex;gap:14px;align-items:flex-start;transition:border-color .15s;
+}
+.news-card:hover{border-color:#3b4139}
+.news-thumb{
+  flex:none;width:132px;padding:0;border:1px solid var(--line);border-radius:11px;
+  overflow:hidden;cursor:pointer;background:none;line-height:0;transition:transform .15s,border-color .15s;
+}
+.news-thumb:hover{transform:scale(1.03);border-color:var(--lime-dark)}
+.news-thumb svg{width:100%;height:auto;display:block}
+.news-body{flex:1;min-width:0}
+.news-title{
+  font-size:14.5px;font-weight:700;line-height:1.35;margin:8px 0 0;
+  background:none;border:none;color:var(--ink);padding:0;text-align:left;cursor:pointer;
+}
+.news-title:hover{color:var(--lime)}
+.news-lead{font-size:12.5px;color:var(--ink-dim);margin:7px 0 0;line-height:1.5}
+.news-meta{font-size:11px;color:var(--ink-faint);margin-top:9px}
+.news-full p{font-size:14px;line-height:1.65;color:var(--ink-dim);margin:0 0 14px}
+.news-full p:last-child{margin-bottom:0}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+
 /* ---------- Mi perfil ---------- */
 .hero{
   background:linear-gradient(135deg,rgba(201,242,74,.10),transparent 55%),var(--panel);
@@ -356,6 +381,20 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .days{display:flex;gap:7px;flex-wrap:wrap}
+/* Selector de cancha del desafío */
+.courts{display:flex;gap:8px;flex-wrap:wrap}
+.court-pick{
+  flex:1;min-width:120px;text-align:left;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink-dim);
+  border-radius:11px;padding:10px 13px;font-size:13px;font-weight:600;line-height:1.35;
+}
+.court-pick small{display:block;font-size:11px;font-weight:600;color:var(--ink-faint);margin-top:3px}
+.court-pick:hover:not(:disabled){border-color:#3b4139;color:var(--ink)}
+.court-pick.active{background:rgba(201,242,74,.13);border-color:rgba(201,242,74,.5);color:var(--lime)}
+.court-pick.active small{color:var(--lime-dark)}
+.court-pick:disabled{opacity:.5;cursor:not-allowed}
+.court-pick.busy small{color:var(--red)}
+
 .day{cursor:pointer;position:relative}
 /* El checkbox real se oculta sin sacarlo del flujo de accesibilidad; el ancho explícito
    evita que herede el width:100% de los inputs del formulario y desborde la página. */
@@ -377,6 +416,7 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 @media (max-width:820px){
   .split{grid-template-columns:1fr}
   .home-grid{grid-template-columns:1fr}
+  .news{grid-template-columns:1fr}
   .filters{grid-template-columns:1fr 1fr}
   .modal-body .two{grid-template-columns:1fr}
   .brand h1{font-size:17px}
@@ -410,6 +450,12 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
   .hero-rank{margin-left:auto}
   .seg{width:100%}
   .seg-btn{flex:1;padding:9px 10px;text-align:center}
+  /* "Cualquiera" toma la fila completa y las canchas quedan parejas debajo. */
+  .courts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .courts .court-pick{min-width:0}
+  .courts .court-pick:first-child{grid-column:1 / -1}
+  .news-card{gap:12px}
+  .news-thumb{width:104px}
   .greet{padding:16px;gap:14px}
   .greet h2{font-size:19px}
   .greet .btn-row{width:100%}
@@ -439,12 +485,12 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
   </div>
   <nav class="tabs" id="tabs">
     <button class="tab active" data-view="inicio">Inicio</button>
-    <button class="tab" data-view="jugadores">Jugadores</button>
     <button class="tab" data-view="solicitudes">Solicitudes <span class="badge" id="reqBadge" style="display:none">0</span></button>
     <button class="tab" data-view="partidos">Mis partidos <span class="badge" id="matchBadge" style="display:none">0</span></button>
-    <button class="tab" data-view="perfil">Mi perfil</button>
+    <button class="tab" data-view="jugadores">Jugadores</button>
     <button class="tab" data-view="ranking">Ranking nacional</button>
     <button class="tab" data-view="canchas">Canchas</button>
+    <button class="tab" data-view="perfil">Mi perfil</button>
   </nav>
 </header>
 
@@ -470,6 +516,9 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
         <div class="box" id="homeQuick"></div>
       </aside>
     </div>
+
+    <p class="section-title">Noticias del circuito PSA</p>
+    <div class="news" id="homeNews"></div>
   </section>
 
   <!-- ============ JUGADORES ============ -->
@@ -736,6 +785,10 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
         </div>
       </div>
       <div class="field">
+        <label>Cancha</label>
+        <div class="courts" id="chCourts"></div>
+      </div>
+      <div class="field">
         <label for="chMsg">Mensaje (opcional)</label>
         <textarea id="chMsg" rows="2" placeholder="Ej: partido amistoso, mejor de 5 games"></textarea>
       </div>
@@ -822,6 +875,24 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
   </div>
 </div>
 
+<!-- ============ MODAL NOTICIA ============ -->
+<div class="overlay" id="newsModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2 id="nwTitle"></h2>
+        <p id="nwMeta"></p>
+      </div>
+      <button class="x" data-close="newsModal">&times;</button>
+    </div>
+    <div class="modal-body news-full" id="nwBody"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="newsModal">Cerrar</button>
+      <a class="btn primary" id="nwLink" href="#" target="_blank" rel="noopener noreferrer">Ver nota original</a>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -833,41 +904,37 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
    ========================================================= */
 /* Al cambiar la semilla de datos se sube la versión: así los navegadores que ya tenían
    una partida guardada cargan el historial nuevo en vez de quedarse con el antiguo. */
-const STORE_KEY = 'squashmatch-v2';
+const STORE_KEY = 'squashmatch-v3';
 const CATEGORIES = ['Primera','Segunda','Tercera','Cuarta','Damas A','Damas B','Juvenil Sub-19','Máster +40','Máster +50'];
 const SLOTS = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
 const HORIZON_DAYS = 45; // ventana de agenda hacia adelante
 
 const CLUBS = [
-  { id:'c1', name:'Club Providencia',     comuna:'Providencia',  courts:4 },
-  { id:'c2', name:'Sport Français',       comuna:'Vitacura',     courts:3 },
-  { id:'c3', name:'Club Manquehue',       comuna:'Vitacura',     courts:5 },
-  { id:'c4', name:'Estadio Español',      comuna:'Las Condes',   courts:3 },
-  { id:'c5', name:'Club Palestino',       comuna:'La Reina',     courts:2 },
-  { id:'c6', name:'Squash Center Ñuñoa',  comuna:'Ñuñoa',        courts:4 }
+  { id:'c1', name:'Club Sirio',      comuna:'Las Condes',  courts:2 },
+  { id:'c2', name:'Santiago Squash', comuna:'Providencia', courts:2 }
 ];
 
 const SEED_PLAYERS = [
-  ['Matías Fuentes','Primera',3,'c3','Diestro'],
+  ['Matías Fuentes','Primera',3,'c2','Diestro'],
   ['Ignacio Zúñiga','Segunda',18,'c1','Diestro'],
   ['Cristóbal Herrera','Primera',1,'c2','Zurdo'],
   ['Rodrigo Vera','Primera',7,'c1','Diestro'],
-  ['Felipe Cárcamo','Segunda',12,'c4','Diestro'],
-  ['Sebastián Rojas','Segunda',24,'c6','Zurdo'],
-  ['Tomás Aguilera','Tercera',41,'c3','Diestro'],
-  ['Andrés Molina','Tercera',37,'c5','Diestro'],
+  ['Felipe Cárcamo','Segunda',12,'c2','Diestro'],
+  ['Sebastián Rojas','Segunda',24,'c1','Zurdo'],
+  ['Tomás Aguilera','Tercera',41,'c2','Diestro'],
+  ['Andrés Molina','Tercera',37,'c1','Diestro'],
   ['Joaquín Silva','Tercera',52,'c1','Diestro'],
-  ['Pablo Navarrete','Cuarta',68,'c6','Zurdo'],
+  ['Pablo Navarrete','Cuarta',68,'c2','Zurdo'],
   ['Diego Contreras','Cuarta',74,'c2','Diestro'],
-  ['Camila Rojas','Damas A',2,'c3','Diestro'],
+  ['Camila Rojas','Damas A',2,'c1','Diestro'],
   ['Fernanda Lagos','Damas A',5,'c1','Zurdo'],
-  ['Antonia Pérez','Damas B',14,'c4','Diestro'],
-  ['Valentina Muñoz','Damas B',21,'c6','Diestro'],
+  ['Antonia Pérez','Damas B',14,'c2','Diestro'],
+  ['Valentina Muñoz','Damas B',21,'c1','Diestro'],
   ['Benjamín Torres','Juvenil Sub-19',4,'c2','Diestro'],
-  ['Lucas Ibáñez','Juvenil Sub-19',9,'c5','Diestro'],
+  ['Lucas Ibáñez','Juvenil Sub-19',9,'c1','Diestro'],
   ['Jorge Salazar','Máster +40',6,'c1','Diestro'],
-  ['Marcelo Díaz','Máster +40',11,'c3','Zurdo'],
-  ['Patricio Reyes','Máster +50',3,'c4','Diestro']
+  ['Marcelo Díaz','Máster +40',11,'c2','Zurdo'],
+  ['Patricio Reyes','Máster +50',3,'c2','Diestro']
 ];
 
 const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -880,45 +947,45 @@ const SEED_HISTORY = [
   // Julio: viene ganando tres seguidos
   [2,  '19:00','c1','p2','p5', 'p2','3-1 (11-8, 9-11, 11-6, 11-7)'],
   [5,  '20:00','c1','p2','p6', 'p2','3-0 (11-7, 11-9, 11-5)'],
-  [9,  '19:00','c4','p2','p7', 'p2','3-2 (11-9, 8-11, 11-6, 9-11, 11-8)'],
-  [14, '20:00','c3','p4','p2', 'p4','3-1 (11-9, 7-11, 11-8, 11-6)'],
-  [20, '19:00','c6','p2','p9', 'p2','3-1 (11-5, 11-7, 8-11, 11-9)'],
+  [9,  '19:00','c2','p2','p7', 'p2','3-2 (11-9, 8-11, 11-6, 9-11, 11-8)'],
+  [14, '20:00','c2','p4','p2', 'p4','3-1 (11-9, 7-11, 11-8, 11-6)'],
+  [20, '19:00','c1','p2','p9', 'p2','3-1 (11-5, 11-7, 8-11, 11-9)'],
   // Junio
   [27, '21:00','c1','p2','p1', 'p1','0-3 (6-11, 8-11, 9-11)'],
   [31, '19:00','c2','p2','p5', 'p2','3-2 (9-11, 11-8, 11-7, 6-11, 11-9)'],
   [35, '18:00','c1','p2','p10','p2','3-0 (11-4, 11-7, 11-6)'],
-  [40, '20:00','c6','p6','p2', 'p6','3-2 (11-7, 9-11, 11-9, 8-11, 12-10)'],
-  [45, '19:00','c3','p2','p4', 'p4','3-1 (8-11, 11-9, 11-7, 11-8)'],
-  [50, '18:00','c4','p2','p7', 'p2','3-1 (11-6, 9-11, 11-8, 11-5)'],
+  [40, '20:00','c1','p6','p2', 'p6','3-2 (11-7, 9-11, 11-9, 8-11, 12-10)'],
+  [45, '19:00','c2','p2','p4', 'p4','3-1 (8-11, 11-9, 11-7, 11-8)'],
+  [50, '18:00','c2','p2','p7', 'p2','3-1 (11-6, 9-11, 11-8, 11-5)'],
   // Mayo
   [58, '19:00','c1','p2','p5', 'p2','3-1 (11-9, 11-7, 7-11, 11-8)'],
   [66, '20:00','c2','p3','p2', 'p3','3-0 (11-5, 11-8, 11-6)'],
   [72, '19:00','c1','p2','p9', 'p2','3-0 (11-8, 11-6, 11-9)'],
-  [80, '21:00','c3','p2','p6', 'p2','3-2 (11-8, 7-11, 11-9, 9-11, 11-7)'],
+  [80, '21:00','c2','p2','p6', 'p2','3-2 (11-8, 7-11, 11-9, 9-11, 11-7)'],
   // Abril
   [88, '18:00','c1','p2','p10','p2','3-1 (11-7, 11-9, 8-11, 11-6)'],
   [95, '19:00','c1','p2','p4', 'p2','3-2 (9-11, 11-8, 11-6, 8-11, 11-9)'],
-  [101,'20:00','c4','p7','p2', 'p7','3-2 (11-9, 8-11, 11-7, 9-11, 11-8)'],
+  [101,'20:00','c2','p7','p2', 'p7','3-2 (11-9, 8-11, 11-7, 9-11, 11-8)'],
   [108,'19:00','c2','p5','p2', 'p5','3-1 (11-6, 9-11, 11-8, 11-7)'],
-  [113,'18:00','c6','p2','p9', 'p2','3-0 (11-5, 11-7, 11-8)'],
+  [113,'18:00','c1','p2','p9', 'p2','3-0 (11-5, 11-7, 11-8)'],
   // Marzo
   [120,'19:00','c1','p2','p6', 'p2','3-1 (11-8, 11-9, 6-11, 11-7)'],
-  [130,'20:00','c3','p1','p2', 'p1','3-1 (11-7, 8-11, 11-6, 11-9)'],
+  [130,'20:00','c2','p1','p2', 'p1','3-1 (11-7, 8-11, 11-6, 11-9)'],
   [140,'19:00','c1','p2','p10','p2','3-0 (11-6, 11-8, 11-5)'],
   // Febrero
-  [150,'18:00','c4','p2','p7', 'p2','3-2 (11-9, 9-11, 11-7, 7-11, 11-8)'],
+  [150,'18:00','c2','p2','p7', 'p2','3-2 (11-9, 9-11, 11-7, 7-11, 11-8)'],
   [160,'20:00','c2','p2','p5', 'p5','2-3 (11-6, 9-11, 11-8, 7-11, 9-11)'],
   [170,'19:00','c1','p2','p9', 'p2','3-1 (11-7, 11-9, 9-11, 11-6)'],
 
   /* --- Partidos entre otros jugadores, para que el ranking tampoco quede vacío --- */
-  [4,  '19:00','c3','p12','p13','p12','3-1 (11-8, 11-6, 9-11, 11-7)'],
+  [4,  '19:00','c2','p12','p13','p12','3-1 (11-8, 11-6, 9-11, 11-7)'],
   [11, '20:00','c2','p3','p4', 'p3','3-0 (11-6, 11-8, 11-9)'],
-  [18, '18:00','c5','p8','p9', 'p9','1-3 (11-9, 6-11, 7-11, 8-11)'],
-  [25, '19:00','c3','p14','p15','p14','3-2 (11-7, 8-11, 11-9, 5-11, 11-8)'],
+  [18, '18:00','c1','p8','p9', 'p9','1-3 (11-9, 6-11, 7-11, 8-11)'],
+  [25, '19:00','c2','p14','p15','p14','3-2 (11-7, 8-11, 11-9, 5-11, 11-8)'],
   [33, '20:00','c2','p1','p3', 'p3','1-3 (11-8, 7-11, 9-11, 8-11)'],
-  [42, '19:00','c5','p16','p17','p16','3-1 (11-6, 9-11, 11-7, 11-8)'],
+  [42, '19:00','c1','p16','p17','p16','3-1 (11-6, 9-11, 11-7, 11-8)'],
   [60, '20:00','c1','p18','p19','p18','3-2 (11-9, 8-11, 11-6, 7-11, 11-9)'],
-  [75, '19:00','c6','p11','p10','p11','3-0 (11-7, 11-5, 11-9)']
+  [75, '19:00','c1','p11','p10','p11','3-0 (11-7, 11-5, 11-9)']
 ];
 
 /* =========================================================
@@ -938,7 +1005,7 @@ function seed(){
     const d = new Date();
     d.setDate(d.getDate() - h[0]);
     return {
-      id:'b'+(i+1), requestId:null, clubId:h[2], court:(i % 3) + 1,
+      id:'b'+(i+1), requestId:null, clubId:h[2], court:(i % 2) + 1,
       date:isoOf(d), time:h[1], playerA:h[3], playerB:h[4],
       status:'confirmada', result:{ winnerId:h[5], score:h[6] }, createdAt:Date.now()
     };
@@ -1025,20 +1092,18 @@ function bookingsAt(clubId, date, time){
     return b.status === 'confirmada' && b.clubId === clubId && b.date === date && b.time === time;
   });
 }
+/** ¿Está libre esa cancha puntual en ese bloque? */
+function courtFree(clubId, date, time, court){
+  return !bookingsAt(clubId, date, time).some(function(b){ return b.court === court; });
+}
 /** Primera cancha libre del club en ese bloque, o 0 si no hay. */
 function freeCourt(clubId, date, time){
   const c = club(clubId);
   if(!c) return 0;
-  const taken = bookingsAt(clubId, date, time).map(function(b){ return b.court; });
   for(let n = 1; n <= c.courts; n++){
-    if(taken.indexOf(n) === -1) return n;
+    if(courtFree(clubId, date, time, n)) return n;
   }
   return 0;
-}
-function freeCourtCount(clubId, date, time){
-  const c = club(clubId);
-  if(!c) return 0;
-  return c.courts - bookingsAt(clubId, date, time).length;
 }
 /** ¿El jugador ya tiene partido confirmado en ese bloque (en cualquier club)? */
 function playerBusy(playerId, date, time){
@@ -1050,12 +1115,23 @@ function playerBusy(playerId, date, time){
 
 /**
  * Valida un bloque para dos jugadores. Devuelve {ok, court, reason}.
+ * `preferred` es el número de cancha pedido; 0 o nulo significa "cualquiera disponible".
  */
-function checkSlot(clubId, date, time, aId, bId){
+function checkSlot(clubId, date, time, aId, bId, preferred){
   if(!clubId || !date || !time) return { ok:false, reason:'Completa club, fecha y hora.' };
   if(isPast(date, time)) return { ok:false, reason:'Ese horario ya pasó.' };
   if(playerBusy(aId, date, time)) return { ok:false, reason:'Ya tienes un partido reservado en ese bloque.' };
   if(playerBusy(bId, date, time)) return { ok:false, reason:'El otro jugador ya tiene un partido en ese bloque.' };
+
+  if(preferred){
+    if(!courtFree(clubId, date, time, preferred)){
+      const alt = freeCourt(clubId, date, time);
+      return { ok:false, reason:'La cancha ' + preferred + ' ya está reservada en ese bloque.' +
+        (alt ? ' La cancha ' + alt + ' sigue libre.' : '') };
+    }
+    return { ok:true, court:preferred };
+  }
+
   const court = freeCourt(clubId, date, time);
   if(!court) return { ok:false, reason:'No quedan canchas disponibles en ese club a esa hora.' };
   return { ok:true, court:court };
@@ -1076,9 +1152,9 @@ function statsOf(playerId){
 /* =========================================================
    ACCIONES
    ========================================================= */
-function sendRequest(toId, clubId, date, time, msg){
+function sendRequest(toId, clubId, date, time, msg, court){
   const fromId = me().id;
-  const check = checkSlot(clubId, date, time, fromId, toId);
+  const check = checkSlot(clubId, date, time, fromId, toId, court);
   if(!check.ok) return { ok:false, reason:check.reason };
 
   const dup = state.requests.some(function(r){
@@ -1089,7 +1165,7 @@ function sendRequest(toId, clubId, date, time, msg){
 
   state.requests.push({
     id: uid('r'), fromId:fromId, toId:toId, clubId:clubId, date:date, time:time,
-    msg:(msg||'').trim(), status:'pendiente', createdAt:Date.now()
+    court: court || 0, msg:(msg||'').trim(), status:'pendiente', createdAt:Date.now()
   });
   save();
   return { ok:true };
@@ -1100,7 +1176,7 @@ function acceptRequest(reqId){
   const r = state.requests.find(function(x){ return x.id === reqId; });
   if(!r || r.status !== 'pendiente') return { ok:false, reason:'La solicitud ya no está pendiente.' };
 
-  const check = checkSlot(r.clubId, r.date, r.time, r.fromId, r.toId);
+  const check = checkSlot(r.clubId, r.date, r.time, r.fromId, r.toId, r.court);
   if(!check.ok){
     r.status = 'caducada';
     r.note = check.reason;
@@ -1279,7 +1355,8 @@ function reqLine(r, dir){
     '<div class="grow">' +
       '<div class="row-title">'+esc(other ? other.name : 'Jugador') +
         ' <span class="chip cat">'+esc(other ? other.category : '')+'</span></div>' +
-      '<div class="row-sub"><b>'+fmtDate(r.date)+' · '+r.time+'</b> — '+esc(c ? c.name : '')+'</div>' +
+      '<div class="row-sub"><b>'+fmtDate(r.date)+' · '+r.time+'</b> — '+esc(c ? c.name : '') +
+        (r.court ? ' · pide la cancha ' + r.court : '') + '</div>' +
       (r.msg ? '<div class="msg">“'+esc(r.msg)+'”</div>' : '') +
       (r.note ? '<div class="msg">'+esc(r.note)+'</div>' : '') +
     '</div>' +
@@ -1410,16 +1487,103 @@ function renderCourts(){
 
   $('courtsBody').innerHTML = slots.map(function(t){
     const busy = bookingsAt(clubId, date, t);
-    const free = c.courts - busy.length;
-    const cell = free === 0
-      ? '<span class="state no">sin cupos</span>'
-      : '<span class="state ok">'+free+' de '+c.courts+' libres</span>';
-    const detail = busy.map(function(b){
-      const a = player(b.playerA), bb = player(b.playerB);
-      return '<span class="chip">Cancha '+b.court+': '+esc((a?a.name:'?')+' vs '+(bb?bb.name:'?'))+'</span>';
-    }).join(' ');
-    return '<tr><td><b>'+t+'</b></td><td class="wrap"><div class="chips">'+cell+' '+detail+'</div></td></tr>';
+    // Con dos canchas por club conviene ver el estado de cada una, no un conteo.
+    let cells = '';
+    for(let n = 1; n <= c.courts; n++){
+      const b = busy.find(function(x){ return x.court === n; });
+      if(b){
+        const a = player(b.playerA), bb = player(b.playerB);
+        cells += '<span class="chip">Cancha '+n+': '+esc((a?a.name:'?')+' vs '+(bb?bb.name:'?'))+'</span>';
+      } else {
+        cells += '<span class="state ok">Cancha '+n+' libre</span>';
+      }
+    }
+    return '<tr><td><b>'+t+'</b></td><td class="wrap"><div class="chips">'+cells+'</div></td></tr>';
   }).join('');
+}
+
+/* =========================================================
+   NOTICIAS
+   ---------------------------------------------------------
+   Resultados reales del Mundial PSA 2026 (Giza, Egipto), redactados acá en
+   español. Las miniaturas son ilustraciones generadas en SVG: el archivo es
+   autocontenido y las fotos de prensa tienen derechos de autor.
+   ========================================================= */
+const NEWS = [
+  {
+    id:'psa-2026-damas',
+    tag:'Mundial femenino',
+    title:'Amina Orfi es la campeona mundial más joven de la historia',
+    date:'16 de mayo de 2026',
+    lead:'Venció a Nour ElSherbini por 3-2 en la final más larga jamás jugada en un Mundial femenino.',
+    accent:'#c9f24a',
+    body:[
+      'La egipcia Amina Orfi se coronó campeona del Mundial PSA 2026 tras vencer a su compatriota Nour ElSherbini por 3-2, con parciales de 6-11, 11-6, 11-9, 7-11 y 14-12, en el Golf Central Palm Hills de Giza, Egipto.',
+      'La final se extendió por 106 minutos y quedó registrada como la más larga en la historia del Mundial femenino bajo el sistema de punto por rally. El quinto game recién se definió en el 14-12, frente a una ElSherbini que buscaba su noveno título mundial.',
+      'Con 18 años y 10 meses, Orfi se convirtió en la campeona mundial más joven de todos los tiempos y pasó a sostener al mismo tiempo el título mundial juvenil y el absoluto. Fue, además, su primer gran trofeo en el PSA Tour.'
+    ],
+    source:{ name:'PSA Squash Tour', url:'https://www.psasquashtour.com/featured-news/orfi-asal-crowned-2026-psa-world-champions-historic-night/' }
+  },
+  {
+    id:'psa-2026-varones',
+    tag:'Mundial masculino',
+    title:'Mostafa Asal retiene el título mundial sin ceder un game',
+    date:'16 de mayo de 2026',
+    lead:'Se impuso a Youssef Ibrahim por 3-0 en 56 minutos y consiguió su segunda corona consecutiva.',
+    accent:'#ff8a3d',
+    body:[
+      'Mostafa Asal defendió con éxito su corona en el Mundial PSA 2026 al derrotar a su compatriota Youssef Ibrahim por 3-0, con parciales de 11-4, 11-1 y 12-10, en el Golf Central Palm Hills de Giza, Egipto.',
+      'El primer preclasificado resolvió la final en apenas 56 minutos. Los dos primeros games fueron un trámite y solo en el tercero Ibrahim logró incomodarlo, forzando un cierre estrecho que Asal terminó ganando 12-10.',
+      'Es su segundo título mundial consecutivo y el trofeo número 29 de su carrera en el PSA Tour. La misma jornada, en la sede, Amina Orfi se quedó con el título femenino.'
+    ],
+    source:{ name:'PSA Squash Tour', url:'https://www.psasquashtour.com/featured-news/orfi-asal-crowned-2026-psa-world-champions-historic-night/' }
+  }
+];
+
+/** Miniatura ilustrada: una cancha de squash estilizada con la pelota en juego. */
+function newsThumb(item){
+  const g = 'grad-' + item.id;
+  return '<svg viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg" role="img" ' +
+    'aria-label="Ilustración de una cancha de squash">' +
+    '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1">' +
+      '<stop offset="0%" stop-color="#1c1f1c"/><stop offset="100%" stop-color="#0d0f0d"/>' +
+    '</linearGradient></defs>' +
+    '<rect width="160" height="100" fill="url(#'+g+')"/>' +
+    '<rect x="26" y="16" width="108" height="68" fill="none" stroke="'+item.accent+'" stroke-width="1.6" opacity=".85"/>' +
+    '<line x1="26" y1="64" x2="134" y2="64" stroke="'+item.accent+'" stroke-width="3" opacity=".55"/>' +
+    '<line x1="26" y1="34" x2="134" y2="34" stroke="'+item.accent+'" stroke-width="1" opacity=".35"/>' +
+    '<line x1="80" y1="64" x2="80" y2="84" stroke="'+item.accent+'" stroke-width="1" opacity=".35"/>' +
+    '<circle cx="108" cy="46" r="4.5" fill="'+item.accent+'"/>' +
+    '<path d="M46 78 q22 -26 58 -32" fill="none" stroke="'+item.accent+'" stroke-width="1" ' +
+      'stroke-dasharray="3 4" opacity=".55"/>' +
+    '</svg>';
+}
+
+function renderNews(){
+  $('homeNews').innerHTML = NEWS.map(function(n){
+    return '<article class="news-card">' +
+      '<button class="news-thumb" data-news="'+n.id+'" aria-label="Abrir la nota: '+esc(n.title)+'">' +
+        newsThumb(n) +
+      '</button>' +
+      '<div class="news-body">' +
+        '<span class="chip cat">'+esc(n.tag)+'</span>' +
+        '<h3 class="news-title" role="button" tabindex="0" data-news="'+n.id+'">'+esc(n.title)+'</h3>' +
+        '<p class="news-lead">'+esc(n.lead)+'</p>' +
+        '<div class="news-meta">'+esc(n.date)+' · Fuente: '+esc(n.source.name)+'</div>' +
+      '</div>' +
+    '</article>';
+  }).join('');
+}
+
+function openNews(id){
+  const n = NEWS.find(function(x){ return x.id === id; });
+  if(!n) return;
+  $('nwTitle').textContent = n.title;
+  $('nwMeta').textContent = n.tag + ' · ' + n.date + ' · Giza, Egipto';
+  $('nwBody').innerHTML = n.body.map(function(p){ return '<p>'+esc(p)+'</p>'; }).join('');
+  $('nwLink').href = n.source.url;
+  $('nwLink').textContent = 'Ver nota en ' + n.source.name;
+  openModal('newsModal');
 }
 
 /* =========================================================
@@ -1941,6 +2105,7 @@ function saveConfig(){
    MODALES
    ========================================================= */
 let challengeTargetId = null;
+let challengeCourt = 0;   // 0 = cualquiera disponible
 
 /** Próximo bloque razonable para proponer: hoy si aún queda hora (con 1h de margen), si no mañana. */
 function defaultSlot(){
@@ -1967,6 +2132,7 @@ function openChallenge(targetId){
   const c = club(t.clubId);
   $('chSub').textContent = t.category + (t.rank ? ' · #'+t.rank+' nacional' : '') + (c ? ' · juega en '+c.name : '');
   $('chClub').value = t.clubId;
+  challengeCourt = 0;
   // Mantiene la fecha/hora anterior si sigue siendo futura; si no, propone el próximo bloque.
   if(!$('chDate').value || isPast($('chDate').value, $('chTime').value)){
     const def = defaultSlot();
@@ -1978,20 +2144,44 @@ function openChallenge(targetId){
   openModal('challengeModal');
 }
 
+/** Dibuja el selector de cancha con el estado real de cada una en ese bloque. */
+function renderCourtPicker(){
+  const clubId = $('chClub').value, date = $('chDate').value, time = $('chTime').value;
+  const c = club(clubId);
+  if(!c) return;
+
+  const past = date && time ? isPast(date, time) : false;
+  // Si la cancha elegida se ocupó (o cambió el bloque), se vuelve a "cualquiera".
+  if(challengeCourt && (past || !courtFree(clubId, date, time, challengeCourt))) challengeCourt = 0;
+
+  let html = '<button type="button" class="court-pick' + (challengeCourt === 0 ? ' active' : '') + '" data-court="0">' +
+             'Cualquiera<small>La primera libre</small></button>';
+  for(let n = 1; n <= c.courts; n++){
+    const libre = !past && courtFree(clubId, date, time, n);
+    const estado = past ? 'Horario pasado' : (libre ? 'Disponible' : 'Ocupada');
+    html += '<button type="button" class="court-pick' + (challengeCourt === n ? ' active' : '') +
+            (libre ? '' : ' busy') + '"' + (libre ? '' : ' disabled') + ' data-court="' + n + '">' +
+            'Cancha ' + n + '<small>' + estado + '</small></button>';
+  }
+  $('chCourts').innerHTML = html;
+}
+
 function updateAvail(){
+  if(!challengeTargetId) return;
+  renderCourtPicker();
+
   const box = $('chAvail');
   const clubId = $('chClub').value;
   const date = $('chDate').value;
   const time = $('chTime').value;
-  if(!challengeTargetId) return;
-
-  const check = checkSlot(clubId, date, time, me().id, challengeTargetId);
+  const check = checkSlot(clubId, date, time, me().id, challengeTargetId, challengeCourt);
   const c = club(clubId);
+
   if(check.ok){
-    const free = freeCourtCount(clubId, date, time);
     box.className = 'avail ok';
-    box.innerHTML = '✓ Disponible: ' + free + ' de ' + c.courts + ' canchas libres en ' + esc(c.name) +
-                    ' el ' + fmtDate(date) + ' a las ' + time + '.<br>Al aceptar, se reserva la cancha ' + check.court + ' automáticamente.';
+    box.innerHTML = '✓ ' + esc(c.name) + ' · ' + fmtDate(date) + ' · ' + time + ' hrs.<br>' +
+      'Cuando acepte tu rival se reserva la <b>cancha ' + check.court + '</b> de inmediato' +
+      (challengeCourt ? ' (la que elegiste).' : ' (la primera libre).');
   } else {
     box.className = 'avail bad';
     box.textContent = '✕ ' + check.reason;
@@ -2130,14 +2320,20 @@ function bindEvents(){
   });
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(function(o){ o.classList.remove('open'); });
+    // El titular de una noticia también se abre con teclado.
+    if((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('news-title')){
+      e.preventDefault();
+      openNews(e.target.dataset.news);
+    }
   });
 
   // Acciones delegadas
   document.addEventListener('click', function(e){
-    const el = e.target.closest('[data-goto],[data-challenge],[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result]');
+    const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result]');
     if(!el) return;
     const d = el.dataset;
 
+    if(d.news){ openNews(d.news); return; }
     if(d.goto){
       activateView(d.goto);
       if(d.pane) activateProfilePane(d.pane);
@@ -2169,8 +2365,15 @@ function bindEvents(){
 
   // Modal desafío
   ['chClub','chDate','chTime'].forEach(function(id){ $(id).addEventListener('input', updateAvail); });
+  $('chCourts').addEventListener('click', function(e){
+    const b = e.target.closest('.court-pick');
+    if(!b || b.disabled) return;
+    challengeCourt = parseInt(b.dataset.court, 10);
+    updateAvail();
+  });
   $('chSend').addEventListener('click', function(){
-    const res = sendRequest(challengeTargetId, $('chClub').value, $('chDate').value, $('chTime').value, $('chMsg').value);
+    const res = sendRequest(challengeTargetId, $('chClub').value, $('chDate').value, $('chTime').value,
+                            $('chMsg').value, challengeCourt);
     if(res.ok){
       closeModal('challengeModal');
       render();
@@ -2222,6 +2425,7 @@ function bindEvents(){
 state = load();
 initControls();
 bindEvents();
+renderNews();
 render();
 
 })();

@@ -14,16 +14,23 @@ la reserva de cancha en el acto.
   o rechazados, recordatorios de partidos dentro de 48 horas y resultados por registrar),
   sus últimos 3 partidos con marcador, accesos directos para desafiar y un enlace a las
   estadísticas completas. El bloque de desafío rápido sugiere tres rivales de su misma
-  categoría o de categorías afines, con el ranking más cercano al suyo.
+  categoría o de categorías afines, con el ranking más cercano al suyo. Al final hay una
+  sección de noticias del circuito PSA: al hacer clic en la miniatura o el titular se abre
+  la nota breve en español, con enlace a la fuente original.
 - **Directorio de jugadores** — búsqueda por nombre o club, filtros por categoría
   (Primera a Cuarta, Damas A/B, Juvenil Sub-19, Máster +40/+50) y por club, con orden
   por ranking nacional, nombre o partidos ganados.
-- **Desafíos** — eliges club, fecha y hora; la app te dice en vivo cuántas canchas
-  quedan libres en ese bloque y bloquea el envío si el horario no sirve.
-- **Reserva inmediata al aceptar** — se asigna la primera cancha libre del club y la
-  reserva queda confirmada. Si el bloque se ocupó mientras tanto, el desafío queda
-  caducado con el motivo, y los demás desafíos pendientes de esos dos jugadores en el
-  mismo bloque se anulan solos.
+- **Desafíos con elección de cancha** — eliges club, fecha, hora y cancha. El selector
+  muestra el estado real de cada cancha en ese bloque (disponible u ocupada) y deja pedir
+  una en particular, porque los jugadores suelen tener preferencia; también existe la
+  opción "cualquiera disponible". El envío se bloquea si el horario no sirve.
+- **Reserva inmediata al aceptar** — se reserva la cancha pedida, o la primera libre si no
+  se pidió ninguna. Si esa cancha se ocupó mientras tanto, el desafío queda caducado
+  indicando el motivo y si la otra cancha sigue libre; además, los demás desafíos
+  pendientes de esos dos jugadores en el mismo bloque se anulan solos.
+- **Clubes y canchas** — dos clubes (Club Sirio y Santiago Squash) con dos canchas cada
+  uno, Cancha 1 y Cancha 2. La grilla de canchas muestra el estado de cada una hora por
+  hora, con quién juega en la que está ocupada, y oculta los bloques ya pasados.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
   cupo, e historial con registro de resultado y marcador.
 - **Mi perfil** — panel con el resumen del jugador, sus estadísticas y la edición de
@@ -37,9 +44,7 @@ la reserva de cancha en el acto.
     contacto (correo, teléfono, comuna), días y horario en que puede jugar, y una nota
     para sus rivales. La disponibilidad aparece en su tarjeta del directorio y el
     contacto se muestra al rival en los partidos ya reservados, para coordinar.
-- **Ranking nacional** por categoría y **grilla de canchas** por club y día, que
-  muestra los cupos libres y quién juega en cada cancha (los bloques ya pasados se
-  ocultan).
+- **Ranking nacional** por categoría, con el récord de cada jugador.
 - **Registro de jugadores** y selector "Entrar como" para simular a cualquier jugador
   y ver los dos lados del desafío.
 
@@ -50,11 +55,19 @@ dependencias, sin CDN, sin build. La lógica de reservas vive en un IIFE al fina
 archivo:
 
 - `checkSlot()` valida un bloque para dos jugadores (horario pasado, jugador con otro
-  partido a esa hora, canchas agotadas).
-- `freeCourt()` / `bookingsAt()` resuelven la disponibilidad real por club, fecha y hora.
-- `acceptRequest()` es la transacción: revalida y crea la reserva con cancha asignada.
+  partido a esa hora, cancha pedida ocupada, canchas agotadas).
+- `courtFree()` / `freeCourt()` / `bookingsAt()` resuelven la disponibilidad real por club,
+  fecha, hora y cancha.
+- `acceptRequest()` es la transacción: revalida y crea la reserva con la cancha asignada.
 
-Los datos se guardan en `localStorage` del navegador.
+Los datos se guardan en `localStorage` del navegador, bajo una clave versionada
+(`squashmatch-vN`). Al cambiar la semilla de datos se sube esa versión para que los
+navegadores con una partida guardada carguen los datos nuevos.
+
+Las noticias del circuito son un arreglo de datos al inicio del script, con el texto
+redactado en español y el enlace a la fuente. Las miniaturas son ilustraciones SVG
+generadas en el propio archivo: no se usan fotos de prensa, tanto por mantener el archivo
+autocontenido como por los derechos de autor sobre esas imágenes.
 
 ## Limitaciones actuales
 
@@ -66,4 +79,7 @@ Los datos se guardan en `localStorage` del navegador.
    pero para que dos jugadores en celulares distintos se vean se necesita un backend
    (usuarios, autenticación, notificaciones).
 
-Los jugadores y clubes incluidos son datos de ejemplo.
+3. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA 2026,
+   Giza), pero están escritos dentro del archivo: no hay una fuente que los actualice sola.
+
+Los jugadores son datos de ejemplo, igual que las comunas asignadas a cada club.
