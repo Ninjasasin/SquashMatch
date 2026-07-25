@@ -168,8 +168,11 @@ select p.club_id, p.id, p.ladder_pos
 on conflict (club_id, player_id) do nothing;
 
 -- Los triggers que ubicaban al jugador segun el club del perfil ya no aplican.
+-- El trigger de ladder_members se borra primero: al correr el esquema por
+-- segunda vez, la funcion ya tiene ese trigger colgando y no se puede eliminar.
 drop trigger if exists profiles_place_in_ladder on public.profiles;
 drop trigger if exists profiles_close_ladder_gap on public.profiles;
+drop trigger if exists ladder_close_gap on public.ladder_members;
 drop function if exists public.place_in_ladder();
 drop function if exists public.close_ladder_gap();
 
