@@ -844,7 +844,8 @@ declare
   fila  record;
   total int := 0;
 begin
-  delete from public.rating_history;
+  -- El WHERE es obligatorio: Supabase bloquea los DELETE sin condicion.
+  delete from public.rating_history where true;
   update public.profiles
      set rating = initial_rating(category), rating_matches = 0
    where category is not null;
