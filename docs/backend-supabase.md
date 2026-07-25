@@ -22,6 +22,12 @@ el flujo de desafíos. Se reescribe la capa de datos, no la app.
 1. Entra a [supabase.com](https://supabase.com) y crea una cuenta (sirve la de GitHub).
 2. **New project**. Nombre: `squashmatch`. Región: **South America (São Paulo)**, la
    más cercana a Chile.
+   En el bloque *Security* de esa misma pantalla:
+   - **Enable Data API**: marcada. Es la que deja que la app hable con la base de datos.
+   - **Automatically expose new tables**: desmarcada. Así ninguna tabla queda expuesta
+     por omisión; el esquema otorga los permisos tabla por tabla.
+   - **Enable automatic RLS**: marcada. Obliga a que toda tabla nueva nazca con
+     seguridad a nivel de fila.
 3. Guarda la contraseña de la base de datos que te muestra. No la necesito yo, pero
    la vas a necesitar tú si algún día entras por fuera.
 4. El proyecto tarda un par de minutos en quedar listo.

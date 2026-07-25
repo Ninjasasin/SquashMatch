@@ -216,6 +216,14 @@ alter table public.profiles   enable row level security;
 alter table public.challenges enable row level security;
 alter table public.bookings   enable row level security;
 
+-- Permisos explícitos. El proyecto se crea con "exponer tablas nuevas
+-- automáticamente" desactivado, así que cada tabla se expone porque acá lo
+-- decidimos. Sin estos GRANT la app no podría leer ni escribir nada.
+grant usage on schema public to authenticated;
+grant select on public.clubs to authenticated;
+grant select, insert, update on public.challenges to authenticated;
+grant select, update on public.bookings to authenticated;
+
 drop policy if exists clubs_read on public.clubs;
 create policy clubs_read on public.clubs
   for select to authenticated using (true);
