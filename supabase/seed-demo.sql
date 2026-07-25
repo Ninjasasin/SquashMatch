@@ -109,6 +109,29 @@ from (values
 where p.email = d.correo;
 
 -- -----------------------------------------------------------------------------
+-- 2b. Inscripción en la escalerilla de su club
+-- La membresía es explícita: el orden de esta lista es el orden inicial.
+-- -----------------------------------------------------------------------------
+insert into public.ladder_members (club_id, player_id, position)
+select d.club, p.id, row_number() over (partition by d.club order by d.orden)
+  from (values
+    ('cristobal@squash.cl', 'c2', 1),
+    ('matias@squash.cl',    'c2', 2),
+    ('felipe@squash.cl',    'c2', 3),
+    ('tomas@squash.cl',     'c2', 4),
+    ('pablo@squash.cl',     'c2', 5),
+    ('rodrigo@squash.cl',   'c1', 1),
+    ('sebastian@squash.cl', 'c1', 2),
+    ('joaquin@squash.cl',   'c1', 3),
+    ('camila@squash.cl',    'c1', 4),
+    ('fernanda@squash.cl',  'c1', 5),
+    ('valentina@squash.cl', 'c1', 6),
+    ('jorge@squash.cl',     'c1', 7)
+  ) as d(correo, club, orden)
+  join public.profiles p on p.email = d.correo
+on conflict (club_id, player_id) do nothing;
+
+-- -----------------------------------------------------------------------------
 -- 3. Partidos jugados, todos con resultado ya confirmado
 -- Las fechas son distintas entre sí para que ninguna reserva choque de cancha.
 -- -----------------------------------------------------------------------------
@@ -153,11 +176,12 @@ where not exists (
 -- -----------------------------------------------------------------------------
 -- 4. Comprobación: si esto devuelve 12 filas, quedó todo listo.
 -- -----------------------------------------------------------------------------
-select c.name as club, p.ladder_pos as puesto, p.name as jugador,
+select c.name as club, m.position as puesto, p.name as jugador,
        p.email as correo, p.category as categoria, p.national_rank as ranking
-  from public.profiles p
-  join public.clubs c on c.id = p.club_id
- order by c.name, p.ladder_pos;
+  from public.ladder_members m
+  join public.profiles p on p.id = m.player_id
+  join public.clubs c on c.id = m.club_id
+ order by c.name, m.position;
 
 -- =============================================================================
 -- PARA BORRAR TODO ESTO (los perfiles, partidos y desafíos se van en cascada):

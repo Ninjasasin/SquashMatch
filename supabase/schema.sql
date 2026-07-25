@@ -137,48 +137,96 @@ create unique index if not exists bookings_slot_unique
 create index if not exists bookings_players_idx on public.bookings (player_a, player_b, match_date);
 
 -- =============================================================================
--- 5. ESCALERILLA — ubicación automática
+-- 5. ESCALERILLA
+-- La membresia es explicita y no depende del club del perfil: un jugador se une
+-- a la escalerilla que quiera y puede estar en varias a la vez.
 -- =============================================================================
+create table if not exists public.ladder_members (
+  club_id   text not null references public.clubs(id) on delete cascade,
+  player_id uuid not null references public.profiles(id) on delete cascade,
+  position  int  not null,
+  joined_at timestamptz not null default now(),
+  primary key (club_id, player_id)
+);
 
--- Deja al jugador al final de la escalerilla de su club y cierra el hueco que
--- dejó en el club anterior.
-create or replace function public.place_in_ladder()
-returns trigger
+-- Dos jugadores no pueden ocupar el mismo puesto. DEFERRABLE porque al
+-- intercambiarse quedan un instante en la misma posicion.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'ladder_members_pos_unique') then
+    alter table public.ladder_members
+      add constraint ladder_members_pos_unique unique (club_id, position)
+      deferrable initially deferred;
+  end if;
+end $$;
+
+-- Traspaso de la version anterior, donde la posicion vivia en el perfil.
+insert into public.ladder_members (club_id, player_id, position)
+select p.club_id, p.id, p.ladder_pos
+  from public.profiles p
+ where p.club_id is not null and p.ladder_pos is not null
+on conflict (club_id, player_id) do nothing;
+
+-- Los triggers que ubicaban al jugador segun el club del perfil ya no aplican.
+drop trigger if exists profiles_place_in_ladder on public.profiles;
+drop trigger if exists profiles_close_ladder_gap on public.profiles;
+drop function if exists public.place_in_ladder();
+drop function if exists public.close_ladder_gap();
+
+-- Al final de la escalerilla elegida.
+create or replace function public.join_ladder(p_club text)
+returns public.ladder_members
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  next_pos int;
+  siguiente int;
+  fila      public.ladder_members;
 begin
-  if tg_op = 'UPDATE' and new.club_id is not distinct from old.club_id then
-    return new;
+  if not exists (select 1 from public.clubs where id = p_club) then
+    raise exception 'Ese club no existe.';
+  end if;
+  if exists (select 1 from public.ladder_members
+              where club_id = p_club and player_id = auth.uid()) then
+    raise exception 'Ya estas en esa escalerilla.';
   end if;
 
-  if tg_op = 'UPDATE' and old.club_id is not null and old.ladder_pos is not null then
-    update public.profiles
-       set ladder_pos = ladder_pos - 1
-     where club_id = old.club_id and ladder_pos > old.ladder_pos;
-  end if;
+  select coalesce(max(position), 0) + 1 into siguiente
+    from public.ladder_members where club_id = p_club;
 
-  if new.club_id is null then
-    new.ladder_pos := null;
-    return new;
-  end if;
+  insert into public.ladder_members (club_id, player_id, position)
+  values (p_club, auth.uid(), siguiente)
+  returning * into fila;
 
-  select coalesce(max(ladder_pos), 0) + 1 into next_pos
-    from public.profiles where club_id = new.club_id;
-
-  new.ladder_pos := next_pos;
-  return new;
+  return fila;
 end $$;
 
-drop trigger if exists profiles_place_in_ladder on public.profiles;
-create trigger profiles_place_in_ladder
-  before insert or update of club_id on public.profiles
-  for each row execute function public.place_in_ladder();
+-- Salir cierra el hueco: los de abajo suben un puesto.
+create or replace function public.leave_ladder(p_club text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  mi_pos int;
+begin
+  select position into mi_pos from public.ladder_members
+   where club_id = p_club and player_id = auth.uid();
+  if mi_pos is null then
+    raise exception 'No estas en esa escalerilla.';
+  end if;
 
--- Al borrarse una cuenta, los de abajo suben un puesto.
+  delete from public.ladder_members
+   where club_id = p_club and player_id = auth.uid();
+
+  update public.ladder_members
+     set position = position - 1
+   where club_id = p_club and position > mi_pos;
+end $$;
+
+-- Si se elimina la cuenta, los de abajo suben.
 create or replace function public.close_ladder_gap()
 returns trigger
 language plpgsql
@@ -186,18 +234,26 @@ security definer
 set search_path = public
 as $$
 begin
-  if old.club_id is not null and old.ladder_pos is not null then
-    update public.profiles
-       set ladder_pos = ladder_pos - 1
-     where club_id = old.club_id and ladder_pos > old.ladder_pos;
-  end if;
+  update public.ladder_members
+     set position = position - 1
+   where club_id = old.club_id and position > old.position;
   return old;
 end $$;
 
-drop trigger if exists profiles_close_ladder_gap on public.profiles;
-create trigger profiles_close_ladder_gap
-  after delete on public.profiles
+drop trigger if exists ladder_close_gap on public.ladder_members;
+create trigger ladder_close_gap
+  after delete on public.ladder_members
   for each row execute function public.close_ladder_gap();
+
+alter table public.ladder_members enable row level security;
+grant select on public.ladder_members to authenticated;
+
+drop policy if exists ladder_read on public.ladder_members;
+create policy ladder_read on public.ladder_members
+  for select to authenticated using (true);
+
+grant execute on function public.join_ladder(text) to authenticated;
+grant execute on function public.leave_ladder(text) to authenticated;
 
 -- =============================================================================
 -- 6. PERFIL AUTOMÁTICO AL REGISTRARSE
@@ -383,8 +439,10 @@ begin
 
   -- Rango de la escalerilla, revalidado al momento de aceptar.
   if ch.ladder then
-    select ladder_pos into pos_from from public.profiles where id = ch.from_id;
-    select ladder_pos into pos_to   from public.profiles where id = ch.to_id;
+    select position into pos_from from public.ladder_members
+      where club_id = ch.club_id and player_id = ch.from_id;
+    select position into pos_to from public.ladder_members
+      where club_id = ch.club_id and player_id = ch.to_id;
     if pos_from is null or pos_to is null or pos_to >= pos_from or pos_from - pos_to > 3 then
       update public.challenges
          set status = 'caducada',
@@ -579,12 +637,16 @@ begin
 
     if updated.winner_id = challenger then
       set constraints all deferred;
-      select ladder_pos into pos_chal from public.profiles where id = challenger;
-      select ladder_pos into pos_def  from public.profiles where id = updated.ladder_defender;
+      select position into pos_chal from public.ladder_members
+        where club_id = updated.club_id and player_id = challenger;
+      select position into pos_def from public.ladder_members
+        where club_id = updated.club_id and player_id = updated.ladder_defender;
 
       if pos_chal is not null and pos_def is not null then
-        update public.profiles set ladder_pos = pos_def  where id = challenger;
-        update public.profiles set ladder_pos = pos_chal where id = updated.ladder_defender;
+        update public.ladder_members set position = pos_def
+          where club_id = updated.club_id and player_id = challenger;
+        update public.ladder_members set position = pos_chal
+          where club_id = updated.club_id and player_id = updated.ladder_defender;
       end if;
     end if;
 
@@ -845,5 +907,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.open_invites;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.ladder_members;
 exception when duplicate_object then null;
 end $$;
