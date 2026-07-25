@@ -52,7 +52,8 @@ archivo con doble clic ya no sirve.
     3 de abajo. El botón *Desafiar* solo aparece en esos tres rivales; el resto queda sin
     acción, así no se puede desafiar fuera de rango.
   - Si gana el desafiante, **intercambian posiciones**; si gana el defensor, la
-    escalerilla no se mueve. El movimiento se aplica al registrar el resultado.
+    escalerilla no se mueve. El movimiento se aplica cuando el rival confirma el
+    resultado, no cuando se carga.
   - El partido se agenda y se reserva como cualquier otro, fijado al club de esa
     escalerilla, y queda marcado como válido por ella.
   - Si las posiciones cambian entre el envío y la respuesta y el desafío queda fuera de
@@ -61,7 +62,14 @@ archivo con doble clic ya no sirve.
     define la cancha. Al registrarse o cambiarse de club, el jugador entra al último
     puesto de la escalerilla que corresponde.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
-  cupo, e historial con registro de resultado y marcador.
+  cupo, e historial con el marcador.
+- **Resultados en dos pasos** — uno de los dos jugadores carga quién ganó y el marcador
+  **en sets** (3-0, 3-1, 3-2, o 2-0 y 2-1 al mejor de 3; no se piden los parciales de
+  cada game, que nadie recuerda). El partido queda *por confirmar* y el rival recibe el
+  aviso con dos botones: confirmar o rechazar. Quien cargó el resultado no puede
+  confirmarlo, y hasta que el otro lo acepte no cuenta para las estadísticas ni mueve la
+  escalerilla. Si lo rechazan, vuelve a quedar disponible para cargarlo de nuevo. El
+  marcador siempre se muestra desde quien mira: una derrota se ve 1-3, no 3-1.
 - **Mi perfil** — panel con el resumen del jugador, sus estadísticas y la edición de
   sus datos:
   - *Panel*: partidos agendados, desafíos por responder, partidos jugados y efectividad,
@@ -100,7 +108,8 @@ Lo que corre en el servidor, porque es donde se puede garantizar:
   escalerilla y cancha, y crea la reserva en una sola transacción. Un índice único
   sobre club, fecha, hora y cancha impide la doble reserva aunque dos personas
   acepten en el mismo segundo.
-- `register_result()` acepta el resultado solo de los jugadores del partido y aplica
+- `report_result()` recibe el resultado de cualquiera de los dos jugadores y lo deja
+  *por confirmar*; `confirm_result()` solo puede ejecutarla el rival, y es la que aplica
   el intercambio de posiciones de la escalerilla.
 - `contact_of()` entrega correo y teléfono únicamente a quien tenga una reserva
   confirmada con esa persona; el directorio no los expone.
@@ -109,25 +118,42 @@ Las noticias del circuito son un arreglo de datos al inicio del script, con el t
 redactado en español y el enlace a la fuente. Las miniaturas son ilustraciones SVG
 generadas en el propio archivo: no se usan fotos de prensa, por derechos de autor.
 
+Las tres tablas están en la publicación `supabase_realtime`, así que los desafíos, las
+reservas y los cambios de escalerilla llegan solos a las pantallas abiertas, sin recargar.
+
 La app necesita estar publicada (Vercel) para funcionar: carga la librería de
 Supabase y el acceso con Google exige un dominio autorizado.
+
+## Datos de prueba
+
+[`supabase/seed-demo.sql`](supabase/seed-demo.sql) crea 12 jugadores repartidos en los dos
+clubes, con perfil, categoría, ranking y 18 partidos ya confirmados, para poder mostrar la
+app con contenido. Se corre en el SQL Editor **después** de `schema.sql`.
+
+Las cuentas quedan como `nombre@squash.cl` — camila, rodrigo, joaquin, sebastian,
+fernanda, valentina y jorge en Club Sirio; cristobal, matias, felipe, tomas y pablo en
+Santiago Squash — todas con la contraseña `squash2026`. Sirven para recorrer la app desde
+el punto de vista de cualquiera de ellos.
+
+Para borrarlas, con sus partidos y desafíos:
+
+```sql
+delete from auth.users where email like '%@squash.cl';
+```
 
 ## Limitaciones actuales
 
 1. **La reserva no viaja a un sistema del club.** El motor de canchas es propio y evita
    dobles reservas dentro de la app, pero ningún club de squash en Chile expone hoy una
    API pública de reservas; integrarlo requiere un acuerdo con cada club.
-2. **El resultado lo carga un solo jugador.** Hoy basta con que uno de los dos lo
-   registre para que la escalerilla se mueva. Con gente compitiendo en serio, el rival
-   debería confirmarlo.
-3. **El administrador no puede navegar como otro usuario.** Las reglas de seguridad
+2. **El administrador no puede navegar como otro usuario.** Las reglas de seguridad
    amarran los datos a quien inició sesión, y suplantar exigiría la clave secreta del
    proyecto, que nunca puede estar en una página web. El panel de administración es de
    solo lectura y el rol se asigna a mano en la base (`profiles.role = 'admin'`).
-4. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA
+3. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA
    2026, Giza), pero están escritos dentro del archivo: no hay una fuente que los
    actualice sola.
-5. **El plan gratis de Supabase pausa los proyectos** tras una semana sin actividad. Si
+4. **El plan gratis de Supabase pausa los proyectos** tras una semana sin actividad. Si
    la app queda sin uso, hay que reactivarla desde el panel antes de una demostración.
 
 Las comunas asignadas a cada club son de ejemplo. Los jugadores ya no lo son: son
