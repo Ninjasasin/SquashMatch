@@ -19,6 +19,17 @@ la reserva de cancha en el acto.
   mismo bloque se anulan solos.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
   cupo, e historial con registro de resultado y marcador.
+- **Mi perfil** — panel con el resumen del jugador, sus estadísticas y la edición de
+  sus datos:
+  - *Panel*: partidos agendados, desafíos por responder, partidos jugados y efectividad,
+    más el próximo partido y los desafíos que esperan respuesta.
+  - *Estadísticas*: efectividad, racha actual, últimos cinco resultados, partidos por mes
+    (gráfico), rivales más frecuentes, clubes donde más juega, rendimiento contra rivales
+    mejor rankeados y actividad de desafíos enviados/recibidos.
+  - *Mis datos*: nombre, categoría, ranking, club, mano hábil, año desde que juega,
+    contacto (correo, teléfono, comuna), días y horario en que puede jugar, y una nota
+    para sus rivales. La disponibilidad aparece en su tarjeta del directorio y el
+    contacto se muestra al rival en los partidos ya reservados, para coordinar.
 - **Ranking nacional** por categoría y **grilla de canchas** por club y día, que
   muestra los cupos libres y quién juega en cada cancha (los bloques ya pasados se
   ocultan).
