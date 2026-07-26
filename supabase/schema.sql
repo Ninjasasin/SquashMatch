@@ -1181,13 +1181,32 @@ grant execute on function public.club_book(text, date, text, int, text) to authe
 grant execute on function public.set_club_note(uuid, text) to authenticated;
 grant execute on function public.club_cancel(uuid) to authenticated;
 
--- Genera los cobros de las reservas que ya existian antes de esta seccion.
+-- Una reserva del club tiene un unico cobro, por la cancha entera. La restriccion
+-- de arriba no sirve para eso: en SQL dos nulos no se consideran iguales, asi que
+-- no impide repetirlos.
+create unique index if not exists payments_club_unique
+  on public.payments (booking_id) where player_id is null;
+
+-- Limpia los cobros sin jugador que no correspondan a la cancha completa: los
+-- generaba el traspaso de mas abajo antes de que supiera de estas reservas.
+delete from public.payments p
+ using public.bookings b, public.clubs c
+ where p.booking_id = b.id
+   and c.id = b.club_id
+   and p.player_id is null
+   and p.amount <> c.court_price;
+
+-- Genera los cobros de las reservas que ya existian antes de esta seccion. Se
+-- saltan las reservas que ya tienen cobros y las que no tienen jugadores de la
+-- app, que son las del club y llevan un cobro unico.
 insert into public.payments (booking_id, player_id, club_id, amount, status)
 select b.id, j.jugador, b.club_id, coalesce(c.court_price, 15000) / 2,
        case when b.status = 'cancelada' then 'anulado' else 'pendiente' end
   from public.bookings b
   join public.clubs c on c.id = b.club_id
   cross join lateral (values (b.player_a), (b.player_b)) as j(jugador)
+ where j.jugador is not null
+   and not exists (select 1 from public.payments p where p.booking_id = b.id)
 on conflict (booking_id, player_id) do nothing;
 
 -- =============================================================================
