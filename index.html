@@ -705,7 +705,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
   <!-- ============ CANCHAS ABIERTAS ============ -->
   <section class="view" id="view-abiertas">
-    <div class="greet">
+    <div class="greet" id="openGreet">
       <div class="greet-main">
         <h2>¿Quieres jugar?</h2>
         <p>Publica el día y la hora en que puedes, y cualquiera del circuito se puede
@@ -717,7 +717,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       </div>
     </div>
 
-    <p class="section-title">Tus publicaciones</p>
+    <p class="section-title" id="myInvitesTitle">Tus publicaciones</p>
     <div class="list" id="myInvites"></div>
 
     <div class="filters" style="grid-template-columns:1fr 1fr">
@@ -2488,6 +2488,9 @@ function inviteLine(i, modo){
       '</div></div>';
   } else if(i.candidateId === me().id){
     derecha = '<span class="state pend">esperando su confirmación</span>';
+  } else if(me() && me().staff){
+    derecha = '<span class="state ' + (i.status === 'postulada' ? 'ok' : 'pend') + '">' +
+      (i.status === 'postulada' ? 'ya tiene rival' : 'busca rival') + '</span>';
   } else {
     derecha = '<button class="btn primary sm" data-joininvite="'+i.id+'">Jugar</button>';
   }
@@ -2509,7 +2512,13 @@ function inviteLine(i, modo){
 
 function renderInvites(){
   const mine = me().id;
+  const esStaff = !!(me() && me().staff);
   const vivas = invitesLive();
+
+  // El club mira quién está buscando partido, pero no publica ni se suma.
+  $('openGreet').hidden = esStaff;
+  $('myInvitesTitle').hidden = esStaff;
+  $('myInvites').hidden = esStaff;
 
   const mias = vivas.filter(function(i){ return i.playerId === mine; });
   $('myInvites').innerHTML = mias.length
@@ -3710,6 +3719,13 @@ function renderSession(){
   $('adminFlag').hidden = !admin;
   $('tabAdmin').hidden = !admin;
   $('tabClub').hidden = !isClubAdmin();
+
+  // La cuenta del club no juega: las secciones de jugador no le sirven.
+  const esStaff = !!(p && p.staff);
+  ['partidos','solicitudes','perfil'].forEach(function(v){
+    const t = document.querySelector('.tab[data-view="'+v+'"]');
+    if(t) t.hidden = esStaff;
+  });
   if(p){
     const cl = club(p.clubId);
     $('userChip').innerHTML = esc(p.name) + ' <small>' + esc(cl ? cl.name : '') + '</small>';
