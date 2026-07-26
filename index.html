@@ -1252,13 +1252,20 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    ========================================================= */
 let state = {
   clubs:[], players:[], requests:[], bookings:[], invites:[], ladders:{},
-  ratingHistory:[], payments:[], clubAdmins:[], contacts:{},
+  ratingHistory:[], payments:[], clubAdmins:[], clubNotes:{}, contacts:{},
   meId:null, session:null, adminMode:false
 };
 
 /* El correo y el teléfono están fuera del SELECT del directorio: se piden
    aparte con contact_of(), que solo los entrega a quien tenga partido con esa
    persona. Por eso las columnas se listan explícitamente. */
+/* La nota del club queda fuera: puede llevar nombres de invitados y detalles de
+   cobro, y se pide aparte con club_notes() solo si uno administra ese club. */
+const BOOKING_COLS = 'id,challenge_id,club_id,court,match_date,match_time,' +
+                     'player_a,player_b,status,winner_id,ladder,ladder_defender,' +
+                     'ladder_applied,created_at,reported_by,sets_winner,sets_loser,' +
+                     'result_status,source';
+
 const PROFILE_COLS = 'id,name,category,national_rank,club_id,hand,comuna,' +
                      'playing_since,available_days,preferred_slot,bio,role,created_at';
 
@@ -1306,7 +1313,6 @@ function mapBooking(row){
           reportedBy:row.reported_by } : null,
     resultStatus:row.result_status || 'sin_resultado',
     ladder:row.ladder ? { defenderId:row.ladder_defender } : null,
-    clubNote:row.club_note || '',
     source:row.source || 'app',
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
@@ -1338,7 +1344,7 @@ async function fetchAll(){
     sb.from('clubs').select('*').order('name'),
     fetchProfiles(),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
-    sb.from('bookings').select('*'),
+    sb.from('bookings').select(BOOKING_COLS),
     sb.from('open_invites').select('*').order('match_date'),
     sb.from('ladder_members').select('*').order('position'),
     sb.from('rating_history').select('*').order('created_at'),
@@ -1401,8 +1407,24 @@ async function fetchAll(){
   fillClubSelects();
 
   await fetchContacts();
+  await fetchClubNotes();
   return true;
 }
+
+/* Las notas de las reservas solo las ve quien administra el club. */
+async function fetchClubNotes(){
+  state.clubNotes = {};
+  const propios = clubsAdministrados(state.meId);
+  if(!propios.length) return;
+
+  await Promise.all(propios.map(function(c){
+    return sb.rpc('club_notes', { p_club:c.id }).then(function(res){
+      (res.data || []).forEach(function(r){ state.clubNotes[r.booking_id] = r.note || ''; });
+    });
+  }));
+}
+
+function notaDe(bookingId){ return state.clubNotes[bookingId] || ''; }
 
 /* Contactos de los rivales con partido reservado: la base decide a quién se los
    entrega, acá solo se piden. Se piden únicamente los que faltan: antes se
@@ -2268,11 +2290,11 @@ function renderClub(){
             (esDelClub
               ? 'Reserva del club <span class="chip">sin cuenta</span>'
               : esc(a ? a.name : '?') + ' vs ' + esc(bb ? bb.name : '?')) + '</div>' +
-          (b.clubNote ? '<div class="msg">' + esc(b.clubNote) + '</div>' : '') +
+          (notaDe(b.id) ? '<div class="msg">' + esc(notaDe(b.id)) + '</div>' : '') +
           cobros.map(function(x){ return pagoChip(x, true); }).join('') +
           '<div class="btn-row" style="margin-top:10px">' +
             '<button class="btn ghost sm" data-clubnote="' + b.id + '">' +
-              (b.clubNote ? 'Editar nota' : 'Agregar nota') + '</button>' +
+              (notaDe(b.id) ? 'Editar nota' : 'Agregar nota') + '</button>' +
             (esDelClub
               ? '<button class="btn danger sm" data-clubcancel="' + b.id + '">Cancelar reserva</button>'
               : '') +
@@ -2291,22 +2313,28 @@ function renderClub(){
 
   $('clubPendientes').innerHTML = conDatos.length
     ? conDatos.map(function(x){
-        const j = player(x.pago.playerId);
-        const rival = x.booking
+        const j = x.pago.playerId ? player(x.pago.playerId) : null;
+        const delClub = !x.pago.playerId;
+        const rival = (x.booking && x.pago.playerId)
           ? player(x.booking.playerA === x.pago.playerId ? x.booking.playerB : x.booking.playerA)
           : null;
         const atraso = x.dias === 0 ? 'hoy'
           : x.dias === 1 ? '1 día' : x.dias + ' días';
+        const titulo = delClub ? 'Reserva del club' : (j ? j.name : 'Jugador');
         return '<div class="row">' +
-          '<div class="avatar alt">'+esc(initials(j ? j.name : '?'))+'</div>' +
+          '<div class="avatar' + (delClub ? '' : ' alt') + '">' +
+            esc(delClub ? 'RC' : initials(j ? j.name : '?')) + '</div>' +
           '<div class="grow">' +
-            '<div class="row-title">'+esc(j ? j.name : 'Jugador')+
+            '<div class="row-title">'+esc(titulo)+
+              (delClub ? ' <span class="chip">sin cuenta</span>' : '') +
               ' <span class="'+(x.dias >= 7 ? 'late mucho' : 'late')+'">'+
               (x.dias ? atraso + ' de atraso' : 'de hoy')+'</span></div>' +
             '<div class="row-sub">' + (x.booking
               ? fmtDate(x.booking.date) + ' · ' + x.booking.time + ' · cancha ' + x.booking.court +
                 (rival ? ' · vs ' + esc(rival.name) : '')
               : 'reserva eliminada') + '</div>' +
+            ((delClub && x.booking && notaDe(x.booking.id))
+              ? '<div class="msg">' + esc(notaDe(x.booking.id)) + '</div>' : '') +
           '</div>' +
           '<span class="money">'+fmtCLP(x.pago.amount)+'</span>' +
           '<button class="btn primary sm" data-pay="'+x.pago.id+'">Marcar pagado</button>' +
@@ -2318,12 +2346,12 @@ function renderClub(){
   const recientes = pagados.slice().sort(function(a, b){ return b.paidAt - a.paidAt; }).slice(0, 25);
   $('clubPagados').innerHTML = recientes.length
     ? recientes.map(function(x){
-        const j = player(x.playerId);
+        const j = x.playerId ? player(x.playerId) : null;
         const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
         return '<div class="row">' +
-          '<div class="avatar">'+esc(initials(j ? j.name : '?'))+'</div>' +
+          '<div class="avatar">'+esc(x.playerId ? initials(j ? j.name : '?') : 'RC')+'</div>' +
           '<div class="grow">' +
-            '<div class="row-title">'+esc(j ? j.name : 'Jugador')+'</div>' +
+            '<div class="row-title">'+esc(j ? j.name : (x.playerId ? 'Jugador' : 'Reserva del club'))+'</div>' +
             '<div class="row-sub">' + (b ? fmtDate(b.date) + ' · ' + b.time + ' · cancha ' + b.court : '') +
               (x.paidAt ? ' · marcado el ' + fmtDate(isoOf(new Date(x.paidAt))) : '') + '</div>' +
           '</div>' +
@@ -3455,11 +3483,9 @@ async function signInWithGoogle(){
 
 async function logout(){
   await sb.auth.signOut();
-  state.session = null;
-  state.meId = null;
-  state.contacts = {};
-  showAuth();
-  toast('Cerraste sesion.');
+  // Se recarga a propósito: dejar la pantalla dibujada con datos de la cuenta
+  // anterior es una filtración esperando a ocurrir.
+  location.reload();
 }
 
 /** Con sesión válida: carga los datos y decide si falta completar el perfil. */
@@ -3930,7 +3956,7 @@ function bindEvents(){
         abrirReservaClub(d.clubbook);
       } else if(d.clubnote){
         const b = state.bookings.find(function(x){ return x.id === d.clubnote; });
-        const texto = prompt('Nota de la reserva (quiénes jugaron, cómo pagan…)', b ? b.clubNote : '');
+        const texto = prompt('Nota de la reserva (quiénes jugaron, cómo pagan…)', b ? notaDe(b.id) : '');
         if(texto !== null){
           const res = await setClubNote(d.clubnote, texto);
           toast(res.ok ? 'Nota guardada.' : res.reason, !res.ok);

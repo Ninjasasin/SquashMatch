@@ -411,6 +411,31 @@ create policy challenges_update on public.challenges
   using (from_id = auth.uid() or to_id = auth.uid())
   with check (status in ('cancelada','rechazada'));
 
+-- La nota del club puede llevar nombres de invitados y detalles de cobro, así que
+-- queda fuera de lo que ve cualquier jugador: se entrega solo por club_notes().
+revoke select on public.bookings from authenticated;
+grant select (
+  id, challenge_id, club_id, court, match_date, match_time,
+  player_a, player_b, status, winner_id, score, ladder, ladder_defender,
+  ladder_applied, created_at, reported_by, sets_winner, sets_loser,
+  result_status, source
+) on public.bookings to authenticated;
+
+create or replace function public.club_notes(p_club text)
+returns table (booking_id uuid, note text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select b.id, b.club_note
+    from public.bookings b
+   where b.club_id = p_club
+     and public.is_club_admin(p_club);
+$$;
+
+grant execute on function public.club_notes(text) to authenticated;
+
 -- Reservas: visibles para todos (la grilla de canchas muestra la ocupación),
 -- pero solo se crean y modifican por RPC.
 drop policy if exists bookings_read on public.bookings;
