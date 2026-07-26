@@ -153,6 +153,37 @@ Lo que corre en el servidor, porque es donde se puede garantizar:
   el intercambio de posiciones de la escalerilla.
 - `contact_of()` entrega correo y teléfono únicamente a quien tenga una reserva
   confirmada con esa persona; el directorio no los expone.
+- `club_book()` / `set_club_note()` / `club_cancel()` dejan que el club reserve para
+  jugadores sin cuenta, anote quiénes jugaron y libere la cancha. `mark_payment()` marca
+  los cobros, y solo la acepta el administrador de ese club.
+- `club_notes()` entrega las notas de las reservas únicamente a quien administra el club.
+
+### Al agregar una columna sensible, sácala del SELECT general
+
+En Supabase el permiso por omisión es **todos los autenticados ven todas las columnas**,
+así que proteger un dato es siempre una decisión deliberada. Ya pasó dos veces:
+
+- El correo y el teléfono de los jugadores.
+- La nota que el club escribe en cada reserva, que lleva nombres de invitados y detalles
+  de cobro. Estuvo llegando al navegador de cualquier jugador: la interfaz no la mostraba,
+  pero viajaba en la consulta y bastaba con pedirla directamente a la API para leerla.
+
+El patrón para resolverlo es el mismo en los dos casos:
+
+1. `revoke select on <tabla> from authenticated` y volver a otorgar **solo** las columnas
+   públicas, una por una.
+2. Entregar la columna reservada con una función `security definer` que compruebe quién
+   pregunta (`contact_of()`, `club_notes()`).
+3. En el cliente, pedir columnas explícitas en vez de `select('*')`, porque con permisos
+   por columna el asterisco falla.
+
+Ojo con el paso 1: **cada columna nueva hay que sumarla al `grant`**, o la app empieza a
+recibir "permission denied" sin más explicación.
+
+Y una advertencia general: esconder algo en la interfaz no protege nada. La clave pública
+de la app está a la vista en el código de la página —así está diseñado— y cualquiera puede
+consultar la base directamente con ella. Lo único que cuenta es lo que prohíbe el
+servidor.
 
 Las noticias del circuito son un arreglo de datos al inicio del script, con el texto
 redactado en español y el enlace a la fuente. Las miniaturas son ilustraciones SVG
