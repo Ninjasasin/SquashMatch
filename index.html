@@ -373,6 +373,16 @@ td.num, th.num{text-align:right;font-variant-numeric:tabular-nums}
 .news-full p:last-child{margin-bottom:0}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 
+.slot-free{
+  border:1px dashed var(--line);border-radius:var(--radius);
+  padding:11px 15px;font-size:13px;color:var(--ink-faint);
+}
+.pay-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.pay-line .who{font-size:13px;min-width:140px}
+.money{font-variant-numeric:tabular-nums;font-weight:700}
+.late{color:var(--amber);font-size:12px;font-weight:700}
+.late.mucho{color:var(--red)}
+
 /* ---------- Escalerilla ---------- */
 .ladder-rules{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -660,6 +670,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <button class="tab" data-view="ranking">Ranking</button>
     <button class="tab" data-view="canchas">Canchas</button>
     <button class="tab" data-view="perfil">Mi perfil</button>
+    <button class="tab" data-view="club" id="tabClub" hidden>Mi club <span class="badge" id="clubBadge" style="display:none">0</span></button>
     <button class="tab" data-view="admin" id="tabAdmin" hidden>Admin</button>
   </nav>
 </header>
@@ -925,6 +936,45 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <div class="list" id="ladderList"></div>
   </section>
 
+  <!-- ============ ADMINISTRACIÓN DEL CLUB ============ -->
+  <section class="view" id="view-club">
+    <div id="clubHero"></div>
+
+    <div class="seg" id="clubSeg">
+      <button class="seg-btn active" data-cpane="agenda">Agenda del día</button>
+      <button class="seg-btn" data-cpane="cobros">Por cobrar</button>
+      <button class="seg-btn" data-cpane="historial">Pagados</button>
+    </div>
+
+    <div class="tiles" id="clubTiles"></div>
+
+    <div class="pane active" id="cpane-agenda">
+      <div class="filters" style="grid-template-columns:1fr 1fr">
+        <div class="field">
+          <label for="clClub">Club</label>
+          <select id="clClub"></select>
+        </div>
+        <div class="field">
+          <label for="clDate">Día</label>
+          <input id="clDate" type="date">
+          <span class="hint" id="clDateLabel"></span>
+        </div>
+      </div>
+      <p class="section-title" id="clubAgendaTitle"></p>
+      <div class="list" id="clubAgenda"></div>
+    </div>
+
+    <div class="pane" id="cpane-cobros">
+      <p class="section-title">Cobros pendientes, del más atrasado al más nuevo</p>
+      <div class="list" id="clubPendientes"></div>
+    </div>
+
+    <div class="pane" id="cpane-historial">
+      <p class="section-title">Últimos pagos registrados</p>
+      <div class="list" id="clubPagados"></div>
+    </div>
+  </section>
+
   <!-- ============ ADMIN ============ -->
   <section class="view" id="view-admin">
     <div class="ladder-rules">
@@ -1176,7 +1226,7 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    ========================================================= */
 let state = {
   clubs:[], players:[], requests:[], bookings:[], invites:[], ladders:{},
-  ratingHistory:[], contacts:{},
+  ratingHistory:[], payments:[], clubAdmins:[], contacts:{},
   meId:null, session:null, adminMode:false
 };
 
@@ -1194,6 +1244,7 @@ function mapProfile(row){
     category:row.category || '',
     rating:row.rating,
     ratingMatches:row.rating_matches || 0,
+    staff:!!row.staff,
     clubId:row.club_id,
     hand:row.hand || 'Diestro',
     comuna:row.comuna || '',
@@ -1254,27 +1305,47 @@ async function fetchProfiles(){
 }
 
 async function fetchAll(){
-  const [clubs, profiles, challenges, bookings, invites, ladders, ratings] = await Promise.all([
+  const [clubs, profiles, challenges, bookings, invites, ladders, ratings,
+         pagos, admins] = await Promise.all([
     sb.from('clubs').select('*').order('name'),
     fetchProfiles(),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
     sb.from('bookings').select('*'),
     sb.from('open_invites').select('*').order('match_date'),
     sb.from('ladder_members').select('*').order('position'),
-    sb.from('rating_history').select('*').order('created_at')
+    sb.from('rating_history').select('*').order('created_at'),
+    sb.from('payments').select('*'),
+    sb.from('club_admins').select('*')
   ]);
 
   const err = clubs.error || profiles.error || challenges.error || bookings.error;
   if(err){ console.error(err); toast('No pude cargar los datos: ' + err.message, true); return false; }
 
   CLUBS = clubs.data.map(function(c){
-    return { id:c.id, name:c.name, comuna:c.comuna, courts:c.courts };
+    return { id:c.id, name:c.name, comuna:c.comuna, courts:c.courts,
+             price:c.court_price || 15000 };
   });
   state.clubs    = CLUBS;
   state.players  = profiles.data.map(mapProfile);
   state.requests = challenges.data.map(mapChallenge);
   state.bookings = bookings.data.map(mapBooking);
   state.ratingHistory = (ratings && !ratings.error) ? ratings.data : [];
+
+  // Cobros y administradores de club. Si el esquema todavía no se corrió, la app
+  // sigue andando sin la sección.
+  if(pagos && !pagos.error){
+    state.payments = pagos.data.map(function(r){
+      return { id:r.id, bookingId:r.booking_id, playerId:r.player_id, clubId:r.club_id,
+               amount:r.amount, status:r.status,
+               paidAt:r.paid_at ? new Date(r.paid_at).getTime() : 0 };
+    });
+  } else {
+    if(pagos) console.warn('Pagos no disponibles:', pagos.error.message);
+    state.payments = [];
+  }
+  state.clubAdmins = (admins && !admins.error)
+    ? admins.data.map(function(r){ return { clubId:r.club_id, playerId:r.player_id }; })
+    : [];
   statsCache = null;   // los memos se rehacen con los datos nuevos
   deltaCache = null;
 
@@ -1384,6 +1455,39 @@ function lastRatingChange(id){
     });
   }
   return (deltaCache[id] === undefined) ? null : deltaCache[id];
+}
+
+/** Clubes que administra el jugador. Es distinto del admin de la app. */
+function clubsAdministrados(playerId){
+  return state.clubAdmins
+    .filter(function(a){ return a.playerId === playerId; })
+    .map(function(a){ return club(a.clubId); })
+    .filter(Boolean);
+}
+
+function isClubAdmin(){ return clubsAdministrados(state.meId).length > 0; }
+
+/** Las cuentas de administración no son jugadores: no compiten ni aparecen. */
+function jugadores(){
+  return state.players.filter(function(p){ return !p.staff; });
+}
+
+function fmtCLP(n){
+  return '$' + Number(n || 0).toLocaleString('es-CL');
+}
+
+/** Días transcurridos desde el partido, para medir el atraso del cobro. */
+function diasDesde(iso){
+  const d = parseISO(iso);
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
+
+function pagosDe(playerId){
+  return state.payments.filter(function(x){ return x.playerId === playerId; });
+}
+
+function deudaDe(playerId){
+  return pagosDe(playerId).filter(function(x){ return x.status === 'pendiente'; });
 }
 
 function initials(name){
@@ -1624,6 +1728,12 @@ async function cancelBooking(bookingId){
   await refresh();
 }
 
+async function markPayment(paymentId, pagado){
+  const { error } = await sb.rpc('mark_payment', { p_payment:paymentId, p_paid:pagado });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
 async function joinLadder(clubId){
   const { error } = await sb.rpc('join_ladder', { p_club:clubId });
   await refresh();
@@ -1704,6 +1814,7 @@ const VISTAS = {
   escalerilla:  function(){ renderLadder(); },
   ranking:      function(){ renderRanking(); },
   canchas:      function(){ renderCourts(); },
+  club:         function(){ renderClub(); },
   admin:        function(){ renderAdmin(); }
 };
 
@@ -1740,6 +1851,17 @@ function renderBadges(){
   const ob = $('openBadge');
   ob.textContent = abiertas;
   ob.style.display = abiertas ? '' : 'none';
+
+  // Cobros pendientes de los clubes que administra
+  const misClubes = clubsAdministrados(state.meId).map(function(c){ return c.id; });
+  const porCobrar = misClubes.length
+    ? state.payments.filter(function(x){
+        return x.status === 'pendiente' && misClubes.indexOf(x.clubId) > -1;
+      }).length
+    : 0;
+  const cb = $('clubBadge');
+  cb.textContent = porCobrar;
+  cb.style.display = porCobrar ? '' : 'none';
 }
 
 /* ---------- Jugadores ---------- */
@@ -1772,7 +1894,7 @@ function renderPlayers(){
   const cl = filtroJugadores.club;
   const sort = filtroJugadores.sort;
 
-  let list = state.players.filter(function(p){
+  let list = jugadores().filter(function(p){
     if(cat !== 'todas' && p.category !== cat) return false;
     if(cl !== 'todos' && p.clubId !== cl) return false;
     if(q){
@@ -1913,8 +2035,15 @@ function matchLine(b, past){
   if(past){
     if(b.result){
       const won = b.result.winnerId === mine;
+      const pago = state.payments.find(function(x){
+        return x.bookingId === b.id && x.playerId === mine;
+      });
       right = '<span class="state '+(won?'ok':'no')+'">'+(won?'ganado':'perdido')+'</span>' +
-              '<div class="row-sub" style="margin:0">'+esc(setsFor(b.result.sets, won))+' en sets</div>';
+              '<div class="row-sub" style="margin:0">'+esc(setsFor(b.result.sets, won))+' en sets</div>' +
+              (pago && pago.status === 'pendiente'
+                ? '<div class="row-sub" style="margin:0"><span class="state pend">debes '+fmtCLP(pago.amount)+'</span></div>'
+                : (pago && pago.status === 'pagado'
+                    ? '<div class="row-sub" style="margin:0"><span class="state ok">pagada</span></div>' : ''));
     } else if(b.reporte && b.reporte.reportedBy === mine){
       const gane = b.reporte.winnerId === mine;
       right = '<div class="court-tag"><small>Esperando a tu rival</small>' +
@@ -1973,7 +2102,7 @@ function renderMatches(){
 /* ---------- Ranking ---------- */
 function renderRanking(){
   const cat = $('rCat').value;
-  const list = state.players
+  const list = jugadores()
     .filter(function(p){ return cat === 'todas' || p.category === cat; })
     .sort(function(a, b){
       const ra = a.rating || 0, rb = b.rating || 0;
@@ -1998,6 +2127,148 @@ function renderRanking(){
       '<td class="num">'+st.lost+'</td>' +
     '</tr>';
   }).join('') || '<tr><td colspan="8" style="color:var(--ink-faint)">Sin jugadores en esta categoría.</td></tr>';
+}
+
+/* ---------- Administración del club ---------- */
+function pagoChip(pago, conBoton){
+  if(!pago) return '';
+  const j = player(pago.playerId);
+  const nombre = j ? j.name : 'Jugador';
+
+  if(pago.status === 'anulado'){
+    return '<div class="pay-line"><span class="who">'+esc(nombre)+'</span>' +
+           '<span class="state info">anulado</span></div>';
+  }
+  if(pago.status === 'pagado'){
+    return '<div class="pay-line"><span class="who">'+esc(nombre)+'</span>' +
+      '<span class="state ok">pagado</span><span class="money">'+fmtCLP(pago.amount)+'</span>' +
+      (conBoton ? '<button class="btn ghost sm" data-unpay="'+pago.id+'">Deshacer</button>' : '') +
+      '</div>';
+  }
+  return '<div class="pay-line"><span class="who">'+esc(nombre)+'</span>' +
+    '<span class="state pend">por pagar</span><span class="money">'+fmtCLP(pago.amount)+'</span>' +
+    (conBoton ? '<button class="btn primary sm" data-pay="'+pago.id+'">Marcar pagado</button>' : '') +
+    '</div>';
+}
+
+function renderClub(){
+  if(!isClubAdmin()) return;
+
+  const clubId = $('clClub').value || (clubsAdministrados(state.meId)[0] || {}).id;
+  const c = club(clubId);
+  if(!c) return;
+
+  const mios = state.payments.filter(function(x){ return x.clubId === clubId; });
+  const pendientes = mios.filter(function(x){ return x.status === 'pendiente'; });
+  const pagados = mios.filter(function(x){ return x.status === 'pagado'; });
+
+  const deben = {};
+  pendientes.forEach(function(x){ deben[x.playerId] = true; });
+  const totalPend = pendientes.reduce(function(a, x){ return a + x.amount; }, 0);
+
+  const hoy = todayISO();
+  const reservasHoy = state.bookings.filter(function(b){
+    return b.clubId === clubId && b.status === 'confirmada' && b.date === hoy;
+  }).length;
+
+  // Cabecera
+  $('clubHero').innerHTML =
+    '<div class="hero">' +
+      '<div class="avatar">'+esc(initials(c.name))+'</div>' +
+      '<div class="hero-main">' +
+        '<h2>'+esc(c.name)+'</h2>' +
+        '<div class="pmeta">Administración del club · '+c.courts+' canchas · ' +
+          fmtCLP(c.price)+' la hora ('+fmtCLP(c.price/2)+' por jugador)</div>' +
+      '</div>' +
+    '</div>';
+
+  $('clubTiles').innerHTML =
+    tile(fmtCLP(totalPend), 'Por cobrar', pendientes.length + ' cobros pendientes',
+         pendientes.length ? 'warn' : '') +
+    tile(Object.keys(deben).length, 'Jugadores con deuda', 'Con al menos un cobro pendiente') +
+    tile(fmtCLP(pagados.reduce(function(a, x){ return a + x.amount; }, 0)), 'Recaudado',
+         pagados.length + ' pagos registrados', 'good') +
+    tile(reservasHoy, 'Reservas de hoy', fmtDate(hoy));
+
+  // --- Agenda del día ---
+  const dia = $('clDate').value || hoy;
+  $('clDateLabel').textContent = fmtDateLong(dia);
+  $('clubAgendaTitle').textContent = c.name + ' · ' + fmtDate(dia);
+
+  $('clubAgenda').innerHTML = SLOTS.map(function(t){
+    let filas = '';
+    for(let n = 1; n <= c.courts; n++){
+      const b = state.bookings.find(function(x){
+        return x.clubId === clubId && x.date === dia && x.time === t &&
+               x.court === n && x.status === 'confirmada';
+      });
+      if(!b){
+        filas += '<div class="slot-free">Cancha ' + n + ' · libre</div>';
+        continue;
+      }
+      const a = player(b.playerA), bb = player(b.playerB);
+      const pa = state.payments.find(function(x){ return x.bookingId === b.id && x.playerId === b.playerA; });
+      const pb = state.payments.find(function(x){ return x.bookingId === b.id && x.playerId === b.playerB; });
+      filas +=
+        '<div class="row" style="display:block">' +
+          '<div class="row-title">Cancha ' + n + ' · ' +
+            esc(a ? a.name : '?') + ' vs ' + esc(bb ? bb.name : '?') + '</div>' +
+          pagoChip(pa, true) + pagoChip(pb, true) +
+        '</div>';
+    }
+    return '<div style="margin-bottom:14px">' +
+      '<p class="section-title" style="margin:0 0 8px">' + t + '</p>' + filas + '</div>';
+  }).join('');
+
+  // --- Por cobrar ---
+  const conDatos = pendientes.map(function(x){
+    const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
+    return { pago:x, booking:b, dias:b ? diasDesde(b.date) : 0 };
+  }).sort(function(a, b){ return b.dias - a.dias; });
+
+  $('clubPendientes').innerHTML = conDatos.length
+    ? conDatos.map(function(x){
+        const j = player(x.pago.playerId);
+        const rival = x.booking
+          ? player(x.booking.playerA === x.pago.playerId ? x.booking.playerB : x.booking.playerA)
+          : null;
+        const atraso = x.dias === 0 ? 'hoy'
+          : x.dias === 1 ? '1 día' : x.dias + ' días';
+        return '<div class="row">' +
+          '<div class="avatar alt">'+esc(initials(j ? j.name : '?'))+'</div>' +
+          '<div class="grow">' +
+            '<div class="row-title">'+esc(j ? j.name : 'Jugador')+
+              ' <span class="'+(x.dias >= 7 ? 'late mucho' : 'late')+'">'+
+              (x.dias ? atraso + ' de atraso' : 'de hoy')+'</span></div>' +
+            '<div class="row-sub">' + (x.booking
+              ? fmtDate(x.booking.date) + ' · ' + x.booking.time + ' · cancha ' + x.booking.court +
+                (rival ? ' · vs ' + esc(rival.name) : '')
+              : 'reserva eliminada') + '</div>' +
+          '</div>' +
+          '<span class="money">'+fmtCLP(x.pago.amount)+'</span>' +
+          '<button class="btn primary sm" data-pay="'+x.pago.id+'">Marcar pagado</button>' +
+        '</div>';
+      }).join('')
+    : '<div class="empty">No hay cobros pendientes. Todo al día.</div>';
+
+  // --- Pagados ---
+  const recientes = pagados.slice().sort(function(a, b){ return b.paidAt - a.paidAt; }).slice(0, 25);
+  $('clubPagados').innerHTML = recientes.length
+    ? recientes.map(function(x){
+        const j = player(x.playerId);
+        const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
+        return '<div class="row">' +
+          '<div class="avatar">'+esc(initials(j ? j.name : '?'))+'</div>' +
+          '<div class="grow">' +
+            '<div class="row-title">'+esc(j ? j.name : 'Jugador')+'</div>' +
+            '<div class="row-sub">' + (b ? fmtDate(b.date) + ' · ' + b.time + ' · cancha ' + b.court : '') +
+              (x.paidAt ? ' · marcado el ' + fmtDate(isoOf(new Date(x.paidAt))) : '') + '</div>' +
+          '</div>' +
+          '<span class="money">'+fmtCLP(x.amount)+'</span>' +
+          '<button class="btn ghost sm" data-unpay="'+x.id+'">Deshacer</button>' +
+        '</div>';
+      }).join('')
+    : '<div class="empty">Todavía no hay pagos registrados.</div>';
 }
 
 /* ---------- Canchas abiertas ---------- */
@@ -2354,7 +2625,7 @@ function suggestedRivals(p, n){
     if(categoryFamily(x.category) === myFamily) return 1;
     return 2;
   }
-  return state.players
+  return jugadores()
     .filter(function(x){ return x.id !== p.id; })
     .sort(function(a,b){
       const fa = afinidad(a), fb = afinidad(b);
@@ -2394,6 +2665,22 @@ function buildNotifications(){
         sub:(r.note ? r.note + ' · ' : '') + cuando });
     }
   });
+
+  // La deuda propia va arriba de todo: es lo que el club quiere que se vea.
+  const miDeuda = deudaDe(mine);
+  if(miDeuda.length){
+    const total = miDeuda.reduce(function(a, x){ return a + x.amount; }, 0);
+    const atrasos = miDeuda.map(function(x){
+      const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
+      return b ? diasDesde(b.date) : 0;
+    });
+    const masViejo = Math.max.apply(null, atrasos);
+    list.push({ tone:'hot', when:Date.now(),
+      title:'Tienes ' + miDeuda.length + (miDeuda.length === 1 ? ' cancha por pagar' : ' canchas por pagar') +
+            ': ' + fmtCLP(total),
+      sub:(masViejo > 0 ? 'La más antigua lleva ' + masViejo + (masViejo === 1 ? ' día' : ' días') + '. ' : '') +
+          'Paga en el club y ellos la marcan como pagada.' });
+  }
 
   invitesLive().forEach(function(i){
     const c = club(i.clubId);
@@ -2743,7 +3030,14 @@ function renderHero(p, s){
 }
 
 function renderPanelPane(p, s){
+  const deuda = deudaDe(p.id);
+  const totalDeuda = deuda.reduce(function(a, x){ return a + x.amount; }, 0);
+
   $('panelTiles').innerHTML =
+    tile(deuda.length ? fmtCLP(totalDeuda) : 'Al día', 'Canchas por pagar',
+         deuda.length ? deuda.length + (deuda.length === 1 ? ' cancha pendiente' : ' canchas pendientes')
+                      : 'No debes nada en tu club',
+         deuda.length ? 'warn' : 'good') +
     tile(s.upcoming.length, 'Partidos agendados', s.upcoming.length ? 'El próximo: ' + fmtDate(s.upcoming[0].date) : 'Ninguno por ahora') +
     tile(s.pendingIn, 'Desafíos por responder', s.pendingIn ? 'Te están esperando' : 'Nada pendiente', s.pendingIn ? 'warn' : '') +
     tile(s.played.length, 'Partidos jugados', s.won + ' ganados · ' + s.lost + ' perdidos') +
@@ -3051,7 +3345,11 @@ let authMode = null;   // 'correo' | 'registro' | 'perfil'
 function isAdmin(){ return !!(me() && me().role === 'admin'); }
 
 /** Datos mínimos para poder usar la app. */
-function profileComplete(p){ return !!(p && p.name && p.category && p.clubId); }
+function profileComplete(p){
+  if(!p) return false;
+  if(p.staff) return true;   // las cuentas de club no eligen categoría ni escalerilla
+  return !!(p.name && p.category && p.clubId);
+}
 
 function showAuth(){
   $('authScreen').classList.add('open');
@@ -3095,6 +3393,12 @@ async function enterApp(session){
   if(!ok) return;
 
   listenForChanges();
+
+  if(me() && me().staff){
+    showApp();
+    activateView('club');
+    return;
+  }
 
   if(!profileComplete(me())){
     startAuth('perfil');
@@ -3223,6 +3527,7 @@ function renderSession(){
   const admin = isAdmin();
   $('adminFlag').hidden = !admin;
   $('tabAdmin').hidden = !admin;
+  $('tabClub').hidden = !isClubAdmin();
   if(p){
     const cl = club(p.clubId);
     $('userChip').innerHTML = esc(p.name) + ' <small>' + esc(cl ? cl.name : '') + '</small>';
@@ -3298,7 +3603,7 @@ function fillSelect(sel, options, firstLabel, firstValue){
 /** Rellena los selectores de club una vez que la base entregó los clubes. */
 function fillClubSelects(){
   const previos = {};
-  ['cfClub','auClub','fClub','cClub','lClub','chClub','ivClub','oClub'].forEach(function(id){
+  ['cfClub','auClub','fClub','cClub','lClub','chClub','ivClub','oClub','clClub'].forEach(function(id){
     previos[id] = $(id).value;
   });
 
@@ -3310,6 +3615,11 @@ function fillClubSelects(){
   fillSelect($('chClub'), clubOptions(), null, null);
   fillSelect($('ivClub'), clubOptions(), null, null);
   fillSelect($('oClub'), clubOptions(), 'Todos los clubes', 'todos');
+  // El administrador solo ve los clubes que administra
+  const propios = clubsAdministrados(state.meId);
+  fillSelect($('clClub'), (propios.length ? propios : CLUBS).map(function(c){
+    return { value:c.id, label:c.name + ' · ' + c.comuna };
+  }), null, null);
 
   Object.keys(previos).forEach(function(id){
     if(previos[id] && $(id).querySelector('option[value="' + previos[id] + '"]')){
@@ -3342,6 +3652,9 @@ function initControls(){
     const el = $(id);
     el.min = t; el.max = mx; el.value = t;
   });
+  // La agenda del club mira hacia atrás también: los cobros atrasados están ahí.
+  $('clDate').max = mx;
+  $('clDate').value = t;
 }
 
 /* Para contar el movimiento de la escalerilla hay que mirar las posiciones
@@ -3430,6 +3743,16 @@ function bindEvents(){
   });
   $('rCat').addEventListener('change', renderRanking);
   $('lClub').addEventListener('change', renderLadder);
+  ['clClub','clDate'].forEach(function(id){ $(id).addEventListener('input', renderClub); });
+
+  $('clubSeg').addEventListener('click', function(e){
+    const btn = e.target.closest('.seg-btn');
+    if(!btn) return;
+    this.querySelectorAll('.seg-btn').forEach(function(x){ x.classList.remove('active'); });
+    document.querySelectorAll('#view-club .pane').forEach(function(x){ x.classList.remove('active'); });
+    btn.classList.add('active');
+    $('cpane-' + btn.dataset.cpane).classList.add('active');
+  });
   ['oClub','oCat'].forEach(function(id){ $(id).addEventListener('change', renderInvites); });
 
   // Publicación
@@ -3475,7 +3798,8 @@ function bindEvents(){
     const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],' +
       '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],' +
       '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
-      '[data-rejectinvite],[data-cancelinvite],[data-joinladder],[data-leaveladder]');
+      '[data-rejectinvite],[data-cancelinvite],[data-joinladder],[data-leaveladder],' +
+      '[data-pay],[data-unpay]');
     if(!el) return;
     const d = el.dataset;
 
@@ -3512,6 +3836,10 @@ function bindEvents(){
           await cancelBooking(d.cancelbooking);
           toast('Partido cancelado, cancha liberada.');
         }
+      } else if(d.pay || d.unpay){
+        const res = await markPayment(d.pay || d.unpay, !!d.pay);
+        if(!res.ok){ toast(res.reason, true); }
+        else { toast(d.pay ? 'Cobro marcado como pagado.' : 'Cobro devuelto a pendiente.'); }
       } else if(d.joinladder){
         const res = await joinLadder(d.joinladder);
         if(!res.ok){ toast(res.reason, true); }
@@ -3625,6 +3953,7 @@ function listenForChanges(){
     .on('postgres_changes', { event:'*', schema:'public', table:'open_invites' },   refreshSoon)
     .on('postgres_changes', { event:'*', schema:'public', table:'ladder_members' }, refreshSoon)
     .on('postgres_changes', { event:'*', schema:'public', table:'rating_history' }, refreshSoon)
+    .on('postgres_changes', { event:'*', schema:'public', table:'payments' },       refreshSoon)
     .subscribe();
 }
 

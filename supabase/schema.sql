@@ -324,7 +324,7 @@ revoke select on public.profiles from authenticated;
 grant select (
   id, name, category, national_rank, club_id, hand, comuna,
   playing_since, available_days, preferred_slot, bio, role, ladder_pos, created_at,
-  rating, rating_matches
+  rating, rating_matches, staff
 ) on public.profiles to authenticated;
 grant update (
   name, category, national_rank, club_id, hand, phone, comuna,
@@ -866,6 +866,164 @@ end $$;
 grant execute on function public.recalc_ratings() to authenticated;
 
 -- =============================================================================
+-- 10c. ADMINISTRACION DEL CLUB Y PAGOS
+-- Distinto del administrador de la app: el del club ve solo lo suyo. La cancha
+-- se cobra por jugador (la mitad cada uno), que es como se paga en la practica.
+-- =============================================================================
+alter table public.clubs
+  add column if not exists court_price int not null default 15000;
+
+-- Cuentas de administracion: no son jugadores, no aparecen en el directorio.
+alter table public.profiles
+  add column if not exists staff boolean not null default false;
+
+create table if not exists public.club_admins (
+  club_id   text not null references public.clubs(id) on delete cascade,
+  player_id uuid not null references public.profiles(id) on delete cascade,
+  primary key (club_id, player_id)
+);
+
+alter table public.club_admins enable row level security;
+grant select on public.club_admins to authenticated;
+
+drop policy if exists club_admins_read on public.club_admins;
+create policy club_admins_read on public.club_admins
+  for select to authenticated using (true);
+
+create or replace function public.is_club_admin(p_club text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.club_admins
+     where club_id = p_club and player_id = auth.uid()
+  );
+$$;
+
+grant execute on function public.is_club_admin(text) to authenticated;
+
+-- Un cobro por jugador y por reserva.
+create table if not exists public.payments (
+  id         uuid primary key default gen_random_uuid(),
+  booking_id uuid not null references public.bookings(id) on delete cascade,
+  player_id  uuid not null references public.profiles(id) on delete cascade,
+  club_id    text not null references public.clubs(id),
+  amount     int  not null,
+  status     text not null default 'pendiente'
+             check (status in ('pendiente','pagado','anulado')),
+  paid_at    timestamptz,
+  marked_by  uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (booking_id, player_id)
+);
+
+create index if not exists payments_player_idx on public.payments (player_id, status);
+create index if not exists payments_club_idx   on public.payments (club_id, status);
+
+alter table public.payments enable row level security;
+grant select on public.payments to authenticated;
+
+-- Cada quien ve lo suyo; el administrador del club ve todo lo de su club.
+drop policy if exists payments_read on public.payments;
+create policy payments_read on public.payments
+  for select to authenticated
+  using (player_id = auth.uid() or public.is_club_admin(club_id) or public.is_admin());
+
+-- Al confirmarse una reserva se generan los dos cobros, mitad y mitad.
+create or replace function public.create_payments()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  precio int;
+begin
+  select court_price into precio from public.clubs where id = new.club_id;
+  precio := coalesce(precio, 15000);
+
+  insert into public.payments (booking_id, player_id, club_id, amount)
+  values (new.id, new.player_a, new.club_id, precio / 2),
+         (new.id, new.player_b, new.club_id, precio / 2)
+  on conflict (booking_id, player_id) do nothing;
+
+  return new;
+end $$;
+
+drop trigger if exists bookings_create_payments on public.bookings;
+create trigger bookings_create_payments
+  after insert on public.bookings
+  for each row when (new.status = 'confirmada')
+  execute function public.create_payments();
+
+-- Cancelar una reserva anula sus cobros: lo que no se jugo no se cobra.
+create or replace function public.void_payments()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status = 'cancelada' and old.status <> 'cancelada' then
+    update public.payments
+       set status = 'anulado'
+     where booking_id = new.id and status <> 'pagado';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists bookings_void_payments on public.bookings;
+create trigger bookings_void_payments
+  after update of status on public.bookings
+  for each row execute function public.void_payments();
+
+-- Marcar pagado o volver a pendiente. Solo el administrador de ese club.
+create or replace function public.mark_payment(p_payment uuid, p_paid boolean)
+returns public.payments
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  pago    public.payments;
+  updated public.payments;
+begin
+  select * into pago from public.payments where id = p_payment for update;
+  if pago is null then
+    raise exception 'Ese cobro no existe.';
+  end if;
+  if not public.is_club_admin(pago.club_id) then
+    raise exception 'Solo el administrador del club puede marcar pagos.';
+  end if;
+  if pago.status = 'anulado' then
+    raise exception 'Ese cobro esta anulado porque la reserva se cancelo.';
+  end if;
+
+  update public.payments
+     set status    = case when p_paid then 'pagado' else 'pendiente' end,
+         paid_at   = case when p_paid then now() else null end,
+         marked_by = case when p_paid then auth.uid() else null end
+   where id = pago.id
+  returning * into updated;
+
+  return updated;
+end $$;
+
+grant execute on function public.mark_payment(uuid, boolean) to authenticated;
+
+-- Genera los cobros de las reservas que ya existian antes de esta seccion.
+insert into public.payments (booking_id, player_id, club_id, amount, status)
+select b.id, j.jugador, b.club_id, coalesce(c.court_price, 15000) / 2,
+       case when b.status = 'cancelada' then 'anulado' else 'pendiente' end
+  from public.bookings b
+  join public.clubs c on c.id = b.club_id
+  cross join lateral (values (b.player_a), (b.player_b)) as j(jugador)
+on conflict (booking_id, player_id) do nothing;
+
+-- =============================================================================
 -- 11. CANCHAS ABIERTAS
 -- Publicar "quiero jugar tal día a tal hora" sin apuntarle a nadie. Otro jugador
 -- se suma y el que publicó confirma. Publicar NO bloquea la cancha: la primera
@@ -1117,5 +1275,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.rating_history;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.payments;
 exception when duplicate_object then null;
 end $$;

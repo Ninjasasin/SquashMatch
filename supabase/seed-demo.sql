@@ -7,8 +7,10 @@
 -- partidos ya confirmados, para que el directorio, la escalerilla y las
 -- estadísticas se vean vivos al mostrar la app.
 --
---   Correos:      nombre@squash.cl   (camila@squash.cl, rodrigo@squash.cl, …)
---   Contraseña:   squash2026
+--   Jugadores:    nombre@squash.cl   (camila@squash.cl, rodrigo@squash.cl, …)
+--                 Contraseña: squash2026
+--   Club Sirio:   clubsirio@squash.cl · Contraseña: admin2026
+--                 Es cuenta de administración del club, no juega.
 --
 -- Sirven para iniciar sesión y recorrer la app como cualquiera de ellos.
 --
@@ -130,6 +132,50 @@ select d.club, p.id, row_number() over (partition by d.club order by d.orden)
   ) as d(correo, club, orden)
   join public.profiles p on p.email = d.correo
 on conflict (club_id, player_id) do nothing;
+
+-- -----------------------------------------------------------------------------
+-- 2c. Cuenta de administración del Club Sirio
+-- No es un jugador: no aparece en el directorio, la escalerilla ni el ranking.
+--   Correo: clubsirio@squash.cl   ·   Contraseña: admin2026
+-- -----------------------------------------------------------------------------
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, email_change, email_change_token_new, recovery_token
+)
+select
+  '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
+  'authenticated', 'authenticated', 'clubsirio@squash.cl',
+  extensions.crypt('admin2026', extensions.gen_salt('bf')),
+  now(), now(), now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  jsonb_build_object('full_name', 'Club Sirio · Administración'),
+  '', '', '', ''
+where not exists (select 1 from auth.users where email = 'clubsirio@squash.cl');
+
+insert into auth.identities (
+  id, user_id, identity_data, provider, provider_id,
+  last_sign_in_at, created_at, updated_at
+)
+select gen_random_uuid(), u.id,
+  jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true),
+  'email', u.id::text, now(), now(), now()
+from auth.users u
+where u.email = 'clubsirio@squash.cl'
+  and not exists (select 1 from auth.identities i where i.user_id = u.id and i.provider = 'email');
+
+update public.profiles
+   set staff = true, club_id = 'c1', name = 'Club Sirio · Administración'
+ where email = 'clubsirio@squash.cl';
+
+insert into public.club_admins (club_id, player_id)
+select 'c1', id from public.profiles where email = 'clubsirio@squash.cl'
+on conflict do nothing;
+
+-- La cuenta de administración no compite: fuera de la escalerilla.
+delete from public.ladder_members
+ where player_id in (select id from public.profiles where staff);
 
 -- -----------------------------------------------------------------------------
 -- 3. Partidos jugados, todos con resultado ya confirmado
