@@ -423,6 +423,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   display:inline-flex;gap:4px;background:var(--panel-2);border:1px solid var(--line);
   border-radius:12px;padding:4px;margin-bottom:20px;max-width:100%;overflow-x:auto;
 }
+.seg-row{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;justify-content:space-between}
 .seg-btn{
   border:none;background:none;color:var(--ink-dim);font-size:13.5px;font-weight:600;
   padding:9px 16px;border-radius:9px;cursor:pointer;white-space:nowrap;
@@ -940,10 +941,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   <section class="view" id="view-club">
     <div id="clubHero"></div>
 
-    <div class="seg" id="clubSeg">
-      <button class="seg-btn active" data-cpane="agenda">Agenda del día</button>
-      <button class="seg-btn" data-cpane="cobros">Por cobrar</button>
-      <button class="seg-btn" data-cpane="historial">Pagados</button>
+    <div class="seg-row">
+      <div class="seg" id="clubSeg">
+        <button class="seg-btn active" data-cpane="agenda">Agenda del día</button>
+        <button class="seg-btn" data-cpane="cobros">Por cobrar</button>
+        <button class="seg-btn" data-cpane="historial">Pagados</button>
+      </div>
+      <button class="btn sm" id="btnExport">Descargar estado de cuenta</button>
     </div>
 
     <div class="tiles" id="clubTiles"></div>
@@ -2373,6 +2377,80 @@ function abrirReservaClub(clave){
   $('cbNote').value = '';
   openModal('clubBookModal');
   setTimeout(function(){ $('cbNote').focus(); }, 30);
+}
+
+/* Estado de cuenta en planilla. Es el respaldo del club: el plan gratis de la
+   base de datos no hace copias de seguridad, así que la cobranza no puede vivir
+   en un solo lugar. Se genera acá mismo, sin depender de nada externo. */
+function csvCampo(v){
+  const t = String(v === null || v === undefined ? '' : v);
+  return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+}
+
+function descargarEstadoCuenta(clubId){
+  const c = club(clubId);
+  if(!c) return;
+
+  const filas = state.payments
+    .filter(function(x){ return x.clubId === clubId; })
+    .map(function(x){
+      const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
+      const j = x.playerId ? player(x.playerId) : null;
+      const rival = (b && x.playerId)
+        ? player(b.playerA === x.playerId ? b.playerB : b.playerA) : null;
+      return {
+        estado: x.status,
+        jugador: j ? j.name : (x.playerId ? 'jugador eliminado' : 'Reserva del club'),
+        rival: rival ? rival.name : '',
+        fecha: b ? b.date : '',
+        hora: b ? b.time : '',
+        cancha: b ? b.court : '',
+        monto: x.amount,
+        atraso: (b && x.status === 'pendiente') ? diasDesde(b.date) : '',
+        nota: b ? notaDe(b.id) : '',
+        origen: b && b.source === 'club' ? 'reserva del club' : 'reserva por la app'
+      };
+    })
+    .sort(function(a, b){
+      if(a.estado !== b.estado) return a.estado === 'pendiente' ? -1 : 1;
+      return String(b.fecha).localeCompare(String(a.fecha));
+    });
+
+  const cabecera = ['Estado','Jugador','Rival','Fecha','Hora','Cancha','Monto',
+                    'Dias de atraso','Nota','Origen'];
+  const cuerpo = filas.map(function(f){
+    return [f.estado, f.jugador, f.rival, f.fecha, f.hora, f.cancha,
+            f.monto, f.atraso, f.nota, f.origen].map(csvCampo).join(';');
+  });
+
+  const pend = filas.filter(function(f){ return f.estado === 'pendiente'; });
+  const total = pend.reduce(function(a, f){ return a + f.monto; }, 0);
+  const resumen = [
+    '',
+    ['RESUMEN', c.name, 'al ' + fmtDateLong(todayISO())].map(csvCampo).join(';'),
+    ['Cobros pendientes', pend.length].map(csvCampo).join(';'),
+    ['Total por cobrar', total].map(csvCampo).join(';')
+  ];
+
+  // El punto y coma y la marca inicial son para que Excel en español lo abra
+  // en columnas y con los acentos correctos.
+  const texto = '\uFEFF' + [cabecera.map(csvCampo).join(';')]
+    .concat(cuerpo).concat(resumen).join('\r\n');
+
+  const nombre = 'cobranza-' + c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
+                 '-' + todayISO() + '.csv';
+
+  const blob = new Blob([texto], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+
+  return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
 }
 
 /* ---------- Canchas abiertas ---------- */
@@ -3848,6 +3926,11 @@ function bindEvents(){
   $('rCat').addEventListener('change', renderRanking);
   $('lClub').addEventListener('change', renderLadder);
   ['clClub','clDate'].forEach(function(id){ $(id).addEventListener('input', renderClub); });
+
+  $('btnExport').addEventListener('click', function(){
+    const r = descargarEstadoCuenta($('clClub').value);
+    if(r) toast('Descargado: ' + r.filas + ' movimientos, ' + fmtCLP(r.total) + ' por cobrar.');
+  });
 
   $('clubSeg').addEventListener('click', function(e){
     const btn = e.target.closest('.seg-btn');
