@@ -1298,7 +1298,7 @@ function mapInvite(row){
 /* El rating llegó después que el resto: si la base todavía no tiene esas
    columnas, se piden los perfiles sin ellas y la app sigue funcionando. */
 async function fetchProfiles(){
-  const conRating = await sb.from('profiles').select(PROFILE_COLS + ',rating,rating_matches');
+  const conRating = await sb.from('profiles').select(PROFILE_COLS + ',rating,rating_matches,staff');
   if(!conRating.error) return conRating;
   console.warn('Rating no disponible:', conRating.error.message);
   return await sb.from('profiles').select(PROFILE_COLS);
