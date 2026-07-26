@@ -1181,20 +1181,34 @@ grant execute on function public.club_book(text, date, text, int, text) to authe
 grant execute on function public.set_club_note(uuid, text) to authenticated;
 grant execute on function public.club_cancel(uuid) to authenticated;
 
--- Una reserva del club tiene un unico cobro, por la cancha entera. La restriccion
--- de arriba no sirve para eso: en SQL dos nulos no se consideran iguales, asi que
--- no impide repetirlos.
-create unique index if not exists payments_club_unique
-  on public.payments (booking_id) where player_id is null;
-
--- Limpia los cobros sin jugador que no correspondan a la cancha completa: los
--- generaba el traspaso de mas abajo antes de que supiera de estas reservas.
+-- Primero se limpian los cobros sin jugador que no correspondan a la cancha
+-- completa: los generaba el traspaso de mas abajo antes de que supiera de estas
+-- reservas. Va antes del indice, porque el indice no se puede crear si todavia
+-- hay duplicados.
 delete from public.payments p
  using public.bookings b, public.clubs c
  where p.booking_id = b.id
    and c.id = b.club_id
    and p.player_id is null
    and p.amount <> c.court_price;
+
+-- Por si quedaran varios cobros de cancha completa en una misma reserva, se
+-- conserva el mas antiguo.
+delete from public.payments p
+ where p.player_id is null
+   and exists (
+     select 1 from public.payments q
+      where q.booking_id = p.booking_id
+        and q.player_id is null
+        and (q.created_at < p.created_at
+             or (q.created_at = p.created_at and q.id < p.id))
+   );
+
+-- Una reserva del club tiene un unico cobro, por la cancha entera. La restriccion
+-- de la tabla no sirve para eso: en SQL dos nulos no se consideran iguales, asi
+-- que no impide repetirlos.
+create unique index if not exists payments_club_unique
+  on public.payments (booking_id) where player_id is null;
 
 -- Genera los cobros de las reservas que ya existian antes de esta seccion. Se
 -- saltan las reservas que ya tienen cobros y las que no tienen jugadores de la
