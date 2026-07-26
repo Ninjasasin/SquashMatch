@@ -45,6 +45,12 @@ create table if not exists public.profiles (
   created_at     timestamptz not null default now()
 );
 
+-- Cuentas de administración de club: no son jugadores y no aparecen en el
+-- directorio, la escalerilla ni el ranking. Va acá y no más abajo porque los
+-- permisos por columna de la sección 7 la nombran.
+alter table public.profiles
+  add column if not exists staff boolean not null default false;
+
 -- La posición en la escalerilla es única dentro de cada club. DEFERRABLE porque
 -- al intercambiar dos jugadores ambos quedan momentáneamente en la misma.
 do $$
@@ -872,10 +878,6 @@ grant execute on function public.recalc_ratings() to authenticated;
 -- =============================================================================
 alter table public.clubs
   add column if not exists court_price int not null default 15000;
-
--- Cuentas de administracion: no son jugadores, no aparecen en el directorio.
-alter table public.profiles
-  add column if not exists staff boolean not null default false;
 
 create table if not exists public.club_admins (
   club_id   text not null references public.clubs(id) on delete cascade,
