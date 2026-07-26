@@ -21,7 +21,31 @@ archivo con doble clic ya no sirve.
     club: la app pide esos dos datos antes de dejar pasar, y con eso el jugador entra al
     último puesto de la escalerilla de su club.
   - La sesión sobrevive a recargas y se cierra desde el botón *Salir*.
-- **Panel de administración** — de solo lectura, visible para las cuentas con
+- **Administración del club** — un rol aparte del administrador de la app, amarrado a un
+  club y no a la persona: alguien puede administrar un club y jugar en otro. Su trabajo es
+  la cobranza, y reemplaza el control manual que hoy lleva el club mientras no haya
+  integración con un medio de pago.
+  - **La cancha se cobra por jugador.** Vale $15.000 y al confirmarse una reserva se
+    generan dos cobros de $7.500, uno para cada uno, que es como se paga en la práctica.
+    Si la reserva se cancela, los cobros se anulan: lo que no se jugó no se cobra.
+  - **El club también reserva para gente sin cuenta**, con una nota de quiénes jugaron.
+    Esas reservas llevan un cobro único por la cancha completa, no aparecen en el ranking
+    ni en las estadísticas, y para el resto de los jugadores figuran solo como "reservada
+    por el club". Es lo que permite que toda la cobranza quede en un lugar y que los datos
+    de ocupación sean reales.
+  - **Agenda del día** con las canchas ocupadas y libres hora por hora, incluidos los días
+    pasados, para saber quién jugó y quién quedó debiendo. Desde cada bloque libre se
+    reserva; desde cada reserva se anota, se cobra o se cancela.
+  - **Por cobrar** ordenado por días de atraso, y **Pagados** con la fecha en que se marcó
+    cada uno y la opción de deshacer.
+  - **Descarga del estado de cuenta** en planilla, con todos los movimientos y el total por
+    cobrar a esa fecha. Es el respaldo del club: el plan gratis de Supabase **no hace
+    copias de seguridad** —empiezan en el plan pagado— así que la cobranza no puede vivir
+    en un solo lugar. El archivo se genera en el navegador y lleva la fecha en el nombre.
+  - La cuenta del club no juega: no aparece en el directorio, la escalerilla ni el ranking,
+    y solo ve las secciones que le sirven. *Canchas abiertas* la conserva como consulta,
+    para ver quién está buscando rival, pero sin publicar ni sumarse.
+- **Panel de administración de la app** — de solo lectura, visible para las cuentas con
   `role = 'admin'`: totales de cuentas, desafíos pendientes, reservas vigentes y partidos
   jugados, más el listado de jugadores con su club, puesto y récord.
 - **Inicio** — pantalla de entrada con el resumen del jugador: sus partidos dentro de
@@ -155,7 +179,11 @@ Lo que corre en el servidor, porque es donde se puede garantizar:
   confirmada con esa persona; el directorio no los expone.
 - `club_book()` / `set_club_note()` / `club_cancel()` dejan que el club reserve para
   jugadores sin cuenta, anote quiénes jugaron y libere la cancha. `mark_payment()` marca
-  los cobros, y solo la acepta el administrador de ese club.
+  los cobros. Todas comprueban que quien llama administre ese club: un jugador que
+  intente marcarse un pago recibe un error del servidor, no de la interfaz.
+- Los cobros los crea un disparador al confirmarse la reserva, y otro los anula al
+  cancelarse. Un índice único garantiza que una reserva del club tenga un solo cobro:
+  la restricción normal no sirve porque en SQL dos nulos no se consideran iguales.
 - `club_notes()` entrega las notas de las reservas únicamente a quien administra el club.
 
 ### Al agregar una columna sensible, sácala del SELECT general
@@ -218,6 +246,8 @@ fernanda, valentina y jorge en Club Sirio; cristobal, matias, felipe, tomas y pa
 Santiago Squash — todas con la contraseña `squash2026`. Sirven para recorrer la app desde
 el punto de vista de cualquiera de ellos.
 
+La administración del Club Sirio entra con `clubsirio@squash.cl` y contraseña `admin2026`.
+
 Para borrarlas, con sus partidos y desafíos:
 
 ```sql
@@ -226,9 +256,12 @@ delete from auth.users where email like '%@squash.cl';
 
 ## Limitaciones actuales
 
-1. **La reserva no viaja a un sistema del club.** El motor de canchas es propio y evita
-   dobles reservas dentro de la app, pero ningún club de squash en Chile expone hoy una
-   API pública de reservas; integrarlo requiere un acuerdo con cada club.
+1. **La app no se conecta con el sistema de reservas que el club ya use.** Ningún club de
+   squash en Chile expone una API pública, así que integrarlo requiere un acuerdo caso a
+   caso. La salida que ofrece la app es la contraria: que el club cargue acá también las
+   canchas de quienes no la usan, y este pase a ser su calendario. Mientras haya dos
+   calendarios en paralelo, la ocupación que muestre el sistema no será real y la cobranza
+   seguirá partida.
 2. **El administrador no puede navegar como otro usuario.** Las reglas de seguridad
    amarran los datos a quien inició sesión, y suplantar exigiría la clave secreta del
    proyecto, que nunca puede estar en una página web. El panel de administración es de
@@ -236,7 +269,12 @@ delete from auth.users where email like '%@squash.cl';
 3. **Las noticias son estáticas.** Los resultados publicados son reales (Mundial PSA
    2026, Giza), pero están escritos dentro del archivo: no hay una fuente que los
    actualice sola.
-4. **El plan gratis de Supabase pausa los proyectos** tras una semana sin actividad. Si
+4. **El plan gratis de Supabase no hace copias de seguridad.** Los respaldos diarios
+   empiezan en el plan Pro. Mientras tanto, el respaldo de la cobranza es la descarga del
+   estado de cuenta, que depende de que alguien se acuerde de hacerla. Si el club empieza
+   a usar esto para cobrar de verdad, conviene pagar el plan o programar un respaldo
+   automático.
+5. **El plan gratis de Supabase pausa los proyectos** tras una semana sin actividad. Si
    la app queda sin uso, hay que reactivarla desde el panel antes de una demostración.
 
 Las comunas asignadas a cada club son de ejemplo. Los jugadores ya no lo son: son
