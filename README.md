@@ -35,7 +35,9 @@ archivo con doble clic ya no sirve.
   la nota breve en español, con enlace a la fuente original.
 - **Directorio de jugadores** — búsqueda por nombre o club, filtros por categoría
   (Primera a Cuarta, Damas A/B, Juvenil Sub-19, Máster +40/+50) y por club, con orden
-  por rating, nombre o partidos ganados.
+  por rating, nombre o partidos ganados. Los filtros se aplican al apretar **Aplicar**,
+  no mientras se escribe, así se pueden combinar varios antes de buscar; los que se dejan
+  vacíos no filtran, y una línea indica qué está aplicado.
 - **Canchas abiertas** — para cuando tienes la hora y no el rival, que es el desorden
   que hoy se resuelve a los gritos en el grupo de WhatsApp del club. Publicas club, día,
   hora y, si quieres, cancha y la categoría de rival que buscas; la publicación queda
@@ -91,7 +93,8 @@ archivo con doble clic ya no sirve.
     (gráfico), rivales más frecuentes, clubes donde más juega, rendimiento contra rivales
     mejor rankeados y actividad de desafíos enviados/recibidos.
   - *Mis datos*: nombre, categoría, club, mano hábil, año desde que juega,
-    contacto (correo, teléfono, comuna), días y horario en que puede jugar, y una nota
+    contacto (correo, teléfono, comuna), días y **franjas horarias** en que puede jugar
+    —se puede marcar más de una—, y una nota
     para sus rivales. La disponibilidad aparece en su tarjeta del directorio y el
     contacto se muestra al rival en los partidos ya reservados, para coordinar.
 - **Rating de los jugadores** — un número que refleja el nivel y se mueve solo con los
@@ -155,7 +158,19 @@ Las noticias del circuito son un arreglo de datos al inicio del script, con el t
 redactado en español y el enlace a la fuente. Las miniaturas son ilustraciones SVG
 generadas en el propio archivo: no se usan fotos de prensa, por derechos de autor.
 
-Las cuatro tablas están en la publicación `supabase_realtime`, así que los desafíos, las
+Sobre el rendimiento, tres decisiones que conviene conocer antes de tocar el código:
+
+- Los datos se releen completos después de cada acción, en vez de actualizar solo lo que
+  cambió. Con este volumen es más simple y más seguro; con cientos de jugadores habría que
+  refinarlo.
+- Los avisos en vivo llegan de a varios por acción, así que se agrupan y disparan una sola
+  relectura.
+- Las estadísticas de cada jugador y el último movimiento de rating se calculan una vez por
+  carga de datos, no cada vez que se pide. Cada vista se dibuja al entrar en ella; los
+  contadores de las pestañas se calculan aparte, porque deben estar al día aunque el
+  jugador esté mirando otra sección.
+
+Las cinco tablas están en la publicación `supabase_realtime`, así que los desafíos, las
 reservas y los cambios de escalerilla llegan solos a las pantallas abiertas, sin recargar.
 
 La app necesita estar publicada (Vercel) para funcionar: carga la librería de
