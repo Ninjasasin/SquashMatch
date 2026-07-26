@@ -373,6 +373,17 @@ td.num, th.num{text-align:right;font-variant-numeric:tabular-nums}
 .news-full p:last-child{margin-bottom:0}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 
+.mapa{width:100%;border-collapse:separate;border-spacing:3px;font-size:11px}
+.mapa th{background:none;color:var(--ink-faint);font-size:10px;padding:2px;text-align:center;
+  text-transform:none;letter-spacing:0}
+.mapa td.hora{color:var(--ink-faint);text-align:right;padding-right:6px;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.mapa td.celda{
+  border-radius:5px;text-align:center;padding:5px 0;color:var(--ink);
+  font-variant-numeric:tabular-nums;border:1px solid transparent;
+}
+.mapa td.celda.vacia{color:var(--ink-faint);opacity:.35}
+
 .slot-free{
   border:1px dashed var(--line);border-radius:var(--radius);
   padding:11px 15px;font-size:13px;color:var(--ink-faint);
@@ -946,6 +957,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <button class="seg-btn active" data-cpane="agenda">Agenda del día</button>
         <button class="seg-btn" data-cpane="cobros">Por cobrar</button>
         <button class="seg-btn" data-cpane="historial">Pagados</button>
+        <button class="seg-btn" data-cpane="gestion">Gestión</button>
       </div>
       <button class="btn sm" id="btnExport">Descargar estado de cuenta</button>
     </div>
@@ -976,6 +988,39 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <div class="pane" id="cpane-historial">
       <p class="section-title">Últimos pagos registrados</p>
       <div class="list" id="clubPagados"></div>
+    </div>
+
+    <div class="pane" id="cpane-gestion">
+      <div class="filters" style="grid-template-columns:1fr">
+        <div class="field">
+          <label for="gPeriodo">Período</label>
+          <select id="gPeriodo">
+            <option value="7">Últimos 7 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="90">Últimos 90 días</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tiles" id="gTiles"></div>
+
+      <div class="box">
+        <p class="section-title">Cuándo se juega</p>
+        <p class="note">Cuántas reservas hubo en cada bloque. Mientras más encendido, más
+          demanda: ahí es donde conviene subir el precio o abrir más canchas.</p>
+        <div id="gMapa"></div>
+      </div>
+
+      <div class="split">
+        <div class="box">
+          <p class="section-title">Uso por cancha</p>
+          <div id="gCanchas"></div>
+        </div>
+        <div class="box">
+          <p class="section-title">Quiénes juegan más</p>
+          <div id="gJugadores"></div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -2347,6 +2392,8 @@ function renderClub(){
     : '<div class="empty">No hay cobros pendientes. Todo al día.</div>';
 
   // --- Pagados ---
+  renderGestion(clubId);
+
   const recientes = pagados.slice().sort(function(a, b){ return b.paidAt - a.paidAt; }).slice(0, 25);
   $('clubPagados').innerHTML = recientes.length
     ? recientes.map(function(x){
@@ -2451,6 +2498,148 @@ function descargarEstadoCuenta(clubId){
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
 
   return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
+}
+
+/* ---------- Gestión del club ---------- */
+/* Todo se mide sobre días ya transcurridos: incluir los días futuros, que casi no
+   tienen reservas, hundiría la ocupación y daría una foto falsa. */
+function datosGestion(clubId, dias){
+  const c = club(clubId);
+  const hoy = new Date();
+  const desde = new Date();
+  desde.setDate(desde.getDate() - (dias - 1));
+  const desdeISO = isoOf(desde), hastaISO = isoOf(hoy);
+
+  const enRango = function(b){
+    return b.clubId === clubId && b.date >= desdeISO && b.date <= hastaISO;
+  };
+  const confirmadas = state.bookings.filter(function(b){
+    return enRango(b) && b.status === 'confirmada';
+  });
+  const canceladas = state.bookings.filter(function(b){
+    return enRango(b) && b.status === 'cancelada';
+  });
+
+  const bloquesTotales = c.courts * SLOTS.length * dias;
+
+  // Mapa hora × día de la semana
+  const mapa = {};
+  SLOTS.forEach(function(t){ mapa[t] = [0,0,0,0,0,0,0]; });
+  const porCancha = {};
+  const porJugador = {};
+
+  confirmadas.forEach(function(b){
+    const d = parseISO(b.date);
+    if(mapa[b.time]) mapa[b.time][d.getDay()]++;
+    porCancha[b.court] = (porCancha[b.court] || 0) + 1;
+    [b.playerA, b.playerB].forEach(function(id){
+      if(id) porJugador[id] = (porJugador[id] || 0) + 1;
+    });
+  });
+
+  const ids = Object.keys(porJugador);
+  const cobros = state.payments.filter(function(x){
+    const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
+    return b && enRango(b);
+  });
+
+  return {
+    club:c, dias:dias, desde:desdeISO, hasta:hastaISO,
+    reservas:confirmadas.length,
+    canceladas:canceladas.length,
+    bloques:bloquesTotales,
+    ocupacion: bloquesTotales ? Math.round(confirmadas.length / bloquesTotales * 100) : 0,
+    delClub: confirmadas.filter(function(b){ return b.source === 'club'; }).length,
+    mapa:mapa,
+    porCancha:porCancha,
+    jugadores: ids.map(function(id){ return { id:id, partidos:porJugador[id] }; })
+                  .sort(function(a, b){ return b.partidos - a.partidos; }),
+    recaudado: cobros.filter(function(x){ return x.status === 'pagado'; })
+                     .reduce(function(a, x){ return a + x.amount; }, 0),
+    porCobrar: cobros.filter(function(x){ return x.status === 'pendiente'; })
+                     .reduce(function(a, x){ return a + x.amount; }, 0)
+  };
+}
+
+function renderGestion(clubId){
+  const dias = parseInt($('gPeriodo').value, 10) || 30;
+  const g = datosGestion(clubId, dias);
+  if(!g.club) return;
+
+  const tasaCancel = (g.reservas + g.canceladas)
+    ? Math.round(g.canceladas / (g.reservas + g.canceladas) * 100) : 0;
+
+  $('gTiles').innerHTML =
+    tile(g.ocupacion + '%', 'Ocupación media',
+         g.reservas + ' de ' + g.bloques + ' bloques usados',
+         g.ocupacion >= 50 ? 'good' : (g.ocupacion >= 25 ? '' : 'warn')) +
+    tile(g.reservas, 'Reservas', g.delClub + ' cargadas por el club') +
+    tile(fmtCLP(g.recaudado), 'Recaudado', fmtCLP(g.porCobrar) + ' aún por cobrar', 'good') +
+    tile(tasaCancel + '%', 'Cancelaciones', g.canceladas + ' de ' + (g.reservas + g.canceladas));
+
+  // --- Mapa de calor ---
+  let maximo = 0;
+  SLOTS.forEach(function(t){ g.mapa[t].forEach(function(v){ if(v > maximo) maximo = v; }); });
+  const dias7 = ['dom','lun','mar','mié','jue','vie','sáb'];
+  const orden = [1,2,3,4,5,6,0];   // la semana parte el lunes
+
+  let filas = '';
+  SLOTS.forEach(function(t){
+    let celdas = '<td class="hora">' + t + '</td>';
+    orden.forEach(function(d){
+      const v = g.mapa[t][d];
+      const intensidad = maximo ? v / maximo : 0;
+      const fondo = v
+        ? 'background:rgba(201,242,74,' + (0.12 + intensidad * 0.75).toFixed(2) + ');' +
+          (intensidad > 0.55 ? 'color:#131700;font-weight:700;' : '')
+        : 'background:var(--panel-2);';
+      celdas += '<td class="celda' + (v ? '' : ' vacia') + '" style="' + fondo + '">' +
+                (v || '·') + '</td>';
+    });
+    filas += '<tr>' + celdas + '</tr>';
+  });
+
+  $('gMapa').innerHTML =
+    '<div class="tablewrap" style="border:none;background:none">' +
+    '<table class="mapa" style="min-width:340px"><thead><tr><th></th>' +
+    orden.map(function(d){ return '<th>' + dias7[d] + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + filas + '</tbody></table></div>' +
+    (maximo ? '' : '<div class="empty" style="margin-top:12px">Sin reservas en el período.</div>');
+
+  // --- Uso por cancha ---
+  const totalCanchas = Object.keys(g.porCancha)
+    .reduce(function(a, k){ return a + g.porCancha[k]; }, 0);
+  let canchas = '';
+  for(let n = 1; n <= g.club.courts; n++){
+    const v = g.porCancha[n] || 0;
+    const pct = totalCanchas ? Math.round(v / totalCanchas * 100) : 0;
+    canchas += '<div class="rank-item"><div class="grow">' +
+      '<div>Cancha ' + n + '</div>' +
+      '<small>' + v + (v === 1 ? ' reserva' : ' reservas') + ' · ' + pct + '% del uso</small>' +
+      '<div class="rank-bar"><i style="width:' + pct + '%"></i></div>' +
+    '</div></div>';
+  }
+  $('gCanchas').innerHTML = '<div class="rank-list">' + canchas + '</div>';
+
+  // --- Quiénes juegan más ---
+  const semanas = Math.max(1, g.dias / 7);
+  const top = g.jugadores.slice(0, 6);
+  $('gJugadores').innerHTML = top.length
+    ? '<div class="rank-list">' + top.map(function(x){
+        const j = player(x.id);
+        const porSemana = (x.partidos / semanas).toFixed(1).replace('.', ',');
+        const pct = Math.round(x.partidos / top[0].partidos * 100);
+        return '<div class="rank-item">' +
+          '<div class="avatar alt">' + esc(initials(j ? j.name : '?')) + '</div>' +
+          '<div class="grow"><div>' + esc(j ? j.name : 'Jugador') + '</div>' +
+          '<small>' + x.partidos + (x.partidos === 1 ? ' partido' : ' partidos') +
+            ' · ' + porSemana + ' por semana</small>' +
+          '<div class="rank-bar"><i style="width:' + pct + '%"></i></div></div>' +
+        '</div>';
+      }).join('') + '</div>' +
+      '<p class="note" style="margin-top:12px">No incluye las reservas que el club carga ' +
+      'para gente sin cuenta: ahí no hay jugadores identificados.</p>'
+    : '<div class="empty">Sin partidos de jugadores registrados en el período.</div>';
 }
 
 /* ---------- Canchas abiertas ---------- */
@@ -3941,7 +4130,7 @@ function bindEvents(){
   });
   $('rCat').addEventListener('change', renderRanking);
   $('lClub').addEventListener('change', renderLadder);
-  ['clClub','clDate'].forEach(function(id){ $(id).addEventListener('input', renderClub); });
+  ['clClub','clDate','gPeriodo'].forEach(function(id){ $(id).addEventListener('input', renderClub); });
 
   $('btnExport').addEventListener('click', function(){
     const r = descargarEstadoCuenta($('clClub').value);
