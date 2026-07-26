@@ -1132,6 +1132,32 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
+<!-- ============ MODAL RESERVA DEL CLUB ============ -->
+<div class="overlay" id="clubBookModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Reservar cancha</h2>
+        <p id="cbSub"></p>
+      </div>
+      <button class="x" data-close="clubBookModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="cbNote">¿Quiénes juegan?</label>
+        <textarea id="cbNote" rows="2" placeholder="Ej: Pedro Martínez y un invitado · paga Pedro"></textarea>
+        <span class="hint">Queda anotado en la reserva para poder cobrarles después.</span>
+      </div>
+      <div class="auth-note">Se cobra la cancha completa. Es para jugadores que no usan
+        la app: los que sí la usan reservan solos y se les cobra la mitad a cada uno.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="clubBookModal">Cancelar</button>
+      <button class="btn primary" id="cbSave">Reservar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL RESULTADO ============ -->
 <div class="overlay" id="resultModal">
   <div class="modal">
@@ -1280,6 +1306,8 @@ function mapBooking(row){
           reportedBy:row.reported_by } : null,
     resultStatus:row.result_status || 'sin_resultado',
     ladder:row.ladder ? { defenderId:row.ladder_defender } : null,
+    clubNote:row.club_note || '',
+    source:row.source || 'app',
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
 }
@@ -1651,6 +1679,7 @@ function buildStats(){
   state.bookings.forEach(function(b){
     if(b.status !== 'confirmada' || !b.result) return;
     [b.playerA, b.playerB].forEach(function(id){
+      if(!id) return;                       // reserva del club, sin jugadores de la app
       if(!m[id]) m[id] = { played:0, won:0, lost:0 };
       m[id].played++;
       if(b.result.winnerId === id) m[id].won++; else m[id].lost++;
@@ -1726,6 +1755,26 @@ async function cancelBooking(bookingId){
     await sb.from('challenges').update({ status:'cancelada' }).eq('id', b.requestId);
   }
   await refresh();
+}
+
+async function clubBook(clubId, date, time, court, nota){
+  const { error } = await sb.rpc('club_book', {
+    p_club:clubId, p_date:date, p_time:time, p_court:court, p_note:nota || ''
+  });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+async function setClubNote(bookingId, nota){
+  const { error } = await sb.rpc('set_club_note', { p_booking:bookingId, p_note:nota || '' });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+async function clubCancel(bookingId){
+  const { error } = await sb.rpc('club_cancel', { p_booking:bookingId });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
 }
 
 async function markPayment(paymentId, pagado){
@@ -2132,8 +2181,8 @@ function renderRanking(){
 /* ---------- Administración del club ---------- */
 function pagoChip(pago, conBoton){
   if(!pago) return '';
-  const j = player(pago.playerId);
-  const nombre = j ? j.name : 'Jugador';
+  const j = pago.playerId ? player(pago.playerId) : null;
+  const nombre = j ? j.name : (pago.playerId ? 'Jugador' : 'Cancha completa');
 
   if(pago.status === 'anulado'){
     return '<div class="pay-line"><span class="who">'+esc(nombre)+'</span>' +
@@ -2203,17 +2252,31 @@ function renderClub(){
                x.court === n && x.status === 'confirmada';
       });
       if(!b){
-        filas += '<div class="slot-free">Cancha ' + n + ' · libre</div>';
+        filas += '<div class="slot-free">Cancha ' + n + ' · libre' +
+          '<button class="btn primary sm" style="margin-left:12px" ' +
+          'data-clubbook="' + clubId + '|' + dia + '|' + t + '|' + n + '">Reservar</button></div>';
         continue;
       }
+
+      const cobros = state.payments.filter(function(x){ return x.bookingId === b.id; });
+      const esDelClub = b.source === 'club';
       const a = player(b.playerA), bb = player(b.playerB);
-      const pa = state.payments.find(function(x){ return x.bookingId === b.id && x.playerId === b.playerA; });
-      const pb = state.payments.find(function(x){ return x.bookingId === b.id && x.playerId === b.playerB; });
+
       filas +=
         '<div class="row" style="display:block">' +
           '<div class="row-title">Cancha ' + n + ' · ' +
-            esc(a ? a.name : '?') + ' vs ' + esc(bb ? bb.name : '?') + '</div>' +
-          pagoChip(pa, true) + pagoChip(pb, true) +
+            (esDelClub
+              ? 'Reserva del club <span class="chip">sin cuenta</span>'
+              : esc(a ? a.name : '?') + ' vs ' + esc(bb ? bb.name : '?')) + '</div>' +
+          (b.clubNote ? '<div class="msg">' + esc(b.clubNote) + '</div>' : '') +
+          cobros.map(function(x){ return pagoChip(x, true); }).join('') +
+          '<div class="btn-row" style="margin-top:10px">' +
+            '<button class="btn ghost sm" data-clubnote="' + b.id + '">' +
+              (b.clubNote ? 'Editar nota' : 'Agregar nota') + '</button>' +
+            (esDelClub
+              ? '<button class="btn danger sm" data-clubcancel="' + b.id + '">Cancelar reserva</button>'
+              : '') +
+          '</div>' +
         '</div>';
     }
     return '<div style="margin-bottom:14px">' +
@@ -2269,6 +2332,19 @@ function renderClub(){
         '</div>';
       }).join('')
     : '<div class="empty">Todavía no hay pagos registrados.</div>';
+}
+
+let reservaClubDatos = null;
+
+function abrirReservaClub(clave){
+  const partes = String(clave).split('|');   // club|fecha|hora|cancha
+  reservaClubDatos = { clubId:partes[0], date:partes[1], time:partes[2], court:parseInt(partes[3], 10) };
+  const c = club(reservaClubDatos.clubId);
+  $('cbSub').textContent = (c ? c.name : '') + ' · ' + fmtDateLong(reservaClubDatos.date) +
+    ' · ' + reservaClubDatos.time + ' hrs · cancha ' + reservaClubDatos.court;
+  $('cbNote').value = '';
+  openModal('clubBookModal');
+  setTimeout(function(){ $('cbNote').focus(); }, 30);
 }
 
 /* ---------- Canchas abiertas ---------- */
@@ -2484,7 +2560,9 @@ function renderCourts(){
       const b = busy.find(function(x){ return x.court === n; });
       if(b){
         const a = player(b.playerA), bb = player(b.playerB);
-        cells += '<span class="chip">Cancha '+n+': '+esc((a?a.name:'?')+' vs '+(bb?bb.name:'?'))+'</span>';
+        cells += '<span class="chip">Cancha '+n+': ' +
+          esc(b.source === 'club' ? 'reservada por el club'
+                                  : (a?a.name:'?')+' vs '+(bb?bb.name:'?')) + '</span>';
       } else {
         cells += '<span class="state ok">Cancha '+n+' libre</span>';
       }
@@ -3755,6 +3833,18 @@ function bindEvents(){
   });
   ['oClub','oCat'].forEach(function(id){ $(id).addEventListener('change', renderInvites); });
 
+  // Reserva manual del club
+  $('cbSave').addEventListener('click', async function(){
+    if(!reservaClubDatos) return;
+    this.disabled = true;
+    const d = reservaClubDatos;
+    const res = await clubBook(d.clubId, d.date, d.time, d.court, $('cbNote').value);
+    this.disabled = false;
+    if(!res.ok){ toast(res.reason, true); return; }
+    closeModal('clubBookModal');
+    toast('Cancha ' + d.court + ' reservada · ' + fmtDate(d.date) + ' ' + d.time + ' hrs.');
+  });
+
   // Publicación
   $('btnNewInvite').addEventListener('click', openInviteModal);
   ['ivClub','ivDate','ivTime'].forEach(function(id){
@@ -3799,7 +3889,7 @@ function bindEvents(){
       '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],' +
       '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
       '[data-rejectinvite],[data-cancelinvite],[data-joinladder],[data-leaveladder],' +
-      '[data-pay],[data-unpay]');
+      '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel]');
     if(!el) return;
     const d = el.dataset;
 
@@ -3835,6 +3925,20 @@ function bindEvents(){
         if(confirm('¿Cancelar este partido y liberar la cancha?')){
           await cancelBooking(d.cancelbooking);
           toast('Partido cancelado, cancha liberada.');
+        }
+      } else if(d.clubbook){
+        abrirReservaClub(d.clubbook);
+      } else if(d.clubnote){
+        const b = state.bookings.find(function(x){ return x.id === d.clubnote; });
+        const texto = prompt('Nota de la reserva (quiénes jugaron, cómo pagan…)', b ? b.clubNote : '');
+        if(texto !== null){
+          const res = await setClubNote(d.clubnote, texto);
+          toast(res.ok ? 'Nota guardada.' : res.reason, !res.ok);
+        }
+      } else if(d.clubcancel){
+        if(confirm('¿Cancelar esta reserva? Se libera la cancha y se anula el cobro.')){
+          const res = await clubCancel(d.clubcancel);
+          toast(res.ok ? 'Reserva cancelada.' : res.reason, !res.ok);
         }
       } else if(d.pay || d.unpay){
         const res = await markPayment(d.pay || d.unpay, !!d.pay);

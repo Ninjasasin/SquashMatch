@@ -134,6 +134,24 @@ begin
   end if;
 end $$;
 
+-- El club tambien reserva para gente que no usa la app: esas reservas no tienen
+-- jugadores registrados, solo una nota con quien jugo, para poder cobrarles.
+alter table public.bookings
+  alter column player_a drop not null,
+  alter column player_b drop not null;
+
+alter table public.bookings
+  add column if not exists club_note text not null default '',
+  add column if not exists source    text not null default 'app';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'bookings_source_chk') then
+    alter table public.bookings add constraint bookings_source_chk
+      check (source in ('app','club'));
+  end if;
+end $$;
+
 -- Esta es la regla que impide la doble reserva. Aunque dos personas acepten un
 -- desafío en el mismo instante, la base de datos deja pasar solo a una.
 create unique index if not exists bookings_slot_unique
@@ -911,7 +929,8 @@ grant execute on function public.is_club_admin(text) to authenticated;
 create table if not exists public.payments (
   id         uuid primary key default gen_random_uuid(),
   booking_id uuid not null references public.bookings(id) on delete cascade,
-  player_id  uuid not null references public.profiles(id) on delete cascade,
+  -- nulo cuando la reserva la hizo el club para alguien sin cuenta
+  player_id  uuid references public.profiles(id) on delete cascade,
   club_id    text not null references public.clubs(id),
   amount     int  not null,
   status     text not null default 'pendiente'
@@ -921,6 +940,8 @@ create table if not exists public.payments (
   created_at timestamptz not null default now(),
   unique (booking_id, player_id)
 );
+
+alter table public.payments alter column player_id drop not null;
 
 create index if not exists payments_player_idx on public.payments (player_id, status);
 create index if not exists payments_club_idx   on public.payments (club_id, status);
@@ -946,6 +967,14 @@ declare
 begin
   select court_price into precio from public.clubs where id = new.club_id;
   precio := coalesce(precio, 15000);
+
+  -- Reserva hecha por el club para gente sin cuenta: un solo cobro por la cancha
+  -- completa, sin jugador asociado. Quien jugo queda en la nota.
+  if new.player_a is null or new.player_b is null then
+    insert into public.payments (booking_id, player_id, club_id, amount)
+    values (new.id, null, new.club_id, precio);
+    return new;
+  end if;
 
   insert into public.payments (booking_id, player_id, club_id, amount)
   values (new.id, new.player_a, new.club_id, precio / 2),
@@ -1015,6 +1044,117 @@ begin
 end $$;
 
 grant execute on function public.mark_payment(uuid, boolean) to authenticated;
+
+-- Reservar una cancha para gente que no usa la app. La nota guarda quien jugo.
+create or replace function public.club_book(
+  p_club  text,
+  p_date  date,
+  p_time  text,
+  p_court int,
+  p_note  text
+)
+returns public.bookings
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cl       public.clubs;
+  nueva    public.bookings;
+  slot_ts  timestamptz;
+begin
+  if not public.is_club_admin(p_club) then
+    raise exception 'Solo el administrador del club puede reservar canchas.';
+  end if;
+
+  select * into cl from public.clubs where id = p_club;
+  if cl is null then
+    raise exception 'Ese club no existe.';
+  end if;
+  if p_court < 1 or p_court > cl.courts then
+    raise exception 'Ese club no tiene una cancha %.', p_court;
+  end if;
+
+  slot_ts := (p_date + p_time::time) at time zone 'America/Santiago';
+  if slot_ts < now() - interval '12 hours' then
+    raise exception 'Ese horario ya paso.';
+  end if;
+
+  if exists (
+    select 1 from public.bookings b
+     where b.status = 'confirmada' and b.club_id = p_club
+       and b.match_date = p_date and b.match_time = p_time and b.court = p_court
+  ) then
+    raise exception 'Esa cancha ya esta reservada en ese bloque.';
+  end if;
+
+  insert into public.bookings (
+    club_id, court, match_date, match_time, player_a, player_b,
+    status, ladder, source, club_note
+  ) values (
+    p_club, p_court, p_date, p_time, null, null,
+    'confirmada', false, 'club', coalesce(p_note, '')
+  )
+  returning * into nueva;
+
+  return nueva;
+end $$;
+
+-- Anotar quien jugo, o cualquier cosa que el club necesite recordar para cobrar.
+create or replace function public.set_club_note(p_booking uuid, p_note text)
+returns public.bookings
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  bk      public.bookings;
+  updated public.bookings;
+begin
+  select * into bk from public.bookings where id = p_booking;
+  if bk is null then
+    raise exception 'Esa reserva no existe.';
+  end if;
+  if not public.is_club_admin(bk.club_id) then
+    raise exception 'Solo el administrador del club puede anotar en las reservas.';
+  end if;
+
+  update public.bookings set club_note = coalesce(p_note, '')
+   where id = bk.id
+  returning * into updated;
+
+  return updated;
+end $$;
+
+-- Cancelar desde el club: libera la cancha y anula el cobro.
+create or replace function public.club_cancel(p_booking uuid)
+returns public.bookings
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  bk      public.bookings;
+  updated public.bookings;
+begin
+  select * into bk from public.bookings where id = p_booking;
+  if bk is null then
+    raise exception 'Esa reserva no existe.';
+  end if;
+  if not public.is_club_admin(bk.club_id) then
+    raise exception 'Solo el administrador del club puede cancelar estas reservas.';
+  end if;
+
+  update public.bookings set status = 'cancelada'
+   where id = bk.id
+  returning * into updated;
+
+  return updated;
+end $$;
+
+grant execute on function public.club_book(text, date, text, int, text) to authenticated;
+grant execute on function public.set_club_note(uuid, text) to authenticated;
+grant execute on function public.club_cancel(uuid) to authenticated;
 
 -- Genera los cobros de las reservas que ya existian antes de esta seccion.
 insert into public.payments (booking_id, player_id, club_id, amount, status)
