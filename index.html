@@ -1275,6 +1275,8 @@ async function fetchAll(){
   state.requests = challenges.data.map(mapChallenge);
   state.bookings = bookings.data.map(mapBooking);
   state.ratingHistory = (ratings && !ratings.error) ? ratings.data : [];
+  statsCache = null;   // los memos se rehacen con los datos nuevos
+  deltaCache = null;
 
   // Escalerillas: cada club con sus miembros en orden de puesto.
   state.ladders = {};
@@ -1304,7 +1306,8 @@ async function fetchAll(){
 }
 
 /* Contactos de los rivales con partido reservado: la base decide a quién se los
-   entrega, acá solo se piden. */
+   entrega, acá solo se piden. Se piden únicamente los que faltan: antes se
+   volvían a pedir todos en cada recarga, una llamada por rival. */
 async function fetchContacts(){
   const mine = state.meId;
   if(!mine) return;
@@ -1316,21 +1319,35 @@ async function fetchContacts(){
     else if(b.playerB === mine) ids[b.playerA] = true;
   });
 
-  const pend = Object.keys(ids).map(function(id){
+  const faltantes = Object.keys(ids).filter(function(id){ return !state.contacts[id]; });
+  if(!faltantes.length) return;
+
+  await Promise.all(faltantes.map(function(id){
     return sb.rpc('contact_of', { target:id }).then(function(res){
       const row = res.data && res.data[0];
-      if(row) state.contacts[id] = { email:row.email || '', phone:row.phone || '' };
+      state.contacts[id] = row
+        ? { email:row.email || '', phone:row.phone || '' }
+        : { email:'', phone:'' };   // se recuerda el vacío para no volver a preguntar
     });
-  });
-  await Promise.all(pend);
+  }));
 }
 
 function contactOf(id){ return state.contacts[id] || { email:'', phone:'' }; }
 
-/** Relee todo y vuelve a dibujar. Es barato: el volumen de datos es chico. */
+/** Relee todo y vuelve a dibujar. */
 async function refresh(){
   const ok = await fetchAll();
   if(ok) render();
+}
+
+/* Los avisos en vivo llegan de a varios por acción: aceptar un desafío toca la
+   reserva, el desafío y los que quedan caducados. Sin esto, cada uno disparaba
+   una recarga completa de todas las tablas. */
+let refreshTimer = null;
+
+function refreshSoon(){
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refresh, 400);
 }
 
 /* =========================================================
@@ -1354,18 +1371,19 @@ function setsFor(sets, gano){
   return gano ? p[0] + '-' + p[1] : p[1] + '-' + p[0];
 }
 
-/** Rating del jugador; si aún no tiene partidos, es el de arranque de su categoría. */
-function ratingOf(id){
-  const p = player(id);
-  return p && p.rating ? p.rating : null;
-}
+/** Cuánto se movió en su último partido, para mostrar el +12 / -9.
+    El historial viene ordenado por fecha, así que la última fila de cada jugador
+    es su movimiento más reciente. Se recorre una sola vez, no una por jugador. */
+let deltaCache = null;
 
-/** Cuánto se movió en su último partido, para mostrar el +12 / -9. */
 function lastRatingChange(id){
-  const filas = state.ratingHistory.filter(function(h){ return h.player_id === id; });
-  if(!filas.length) return null;
-  const u = filas[filas.length - 1];
-  return u.rating_after - u.rating_before;
+  if(!deltaCache){
+    deltaCache = {};
+    state.ratingHistory.forEach(function(h){
+      deltaCache[h.player_id] = h.rating_after - h.rating_before;
+    });
+  }
+  return (deltaCache[id] === undefined) ? null : deltaCache[id];
 }
 
 function initials(name){
@@ -1518,16 +1536,28 @@ function canChallengeLadder(clubId, challengerId, defenderId){
   return dp < cp && cp - dp <= LADDER_RANGE;
 }
 
-/* Estadísticas derivadas de los partidos con resultado */
-function statsOf(playerId){
-  let played = 0, won = 0;
+/* Estadísticas derivadas de los partidos con resultado.
+   Se calculan una vez por carga de datos y se guardan: antes cada llamada
+   recorría todas las reservas, y se llama una vez por jugador en cada tabla,
+   por cada fila de la escalerilla y dentro del ordenamiento del directorio. */
+let statsCache = null;
+
+function buildStats(){
+  const m = {};
   state.bookings.forEach(function(b){
     if(b.status !== 'confirmada' || !b.result) return;
-    if(b.playerA !== playerId && b.playerB !== playerId) return;
-    played++;
-    if(b.result.winnerId === playerId) won++;
+    [b.playerA, b.playerB].forEach(function(id){
+      if(!m[id]) m[id] = { played:0, won:0, lost:0 };
+      m[id].played++;
+      if(b.result.winnerId === id) m[id].won++; else m[id].lost++;
+    });
   });
-  return { played:played, won:won, lost:played - won };
+  return m;
+}
+
+function statsOf(playerId){
+  if(!statsCache) statsCache = buildStats();
+  return statsCache[playerId] || { played:0, won:0, lost:0 };
 }
 
 /* =========================================================
@@ -1662,18 +1692,34 @@ async function confirmResult(bookingId, accept){
 /* =========================================================
    RENDER
    ========================================================= */
+/* Cada vista se dibuja sola cuando toca. Antes se redibujaban las diez en cada
+   pasada, aunque solo una estuviera a la vista: con más jugadores eso se nota. */
+const VISTAS = {
+  inicio:       function(){ renderHome(); },
+  jugadores:    function(){ renderPlayers(); },
+  solicitudes:  function(){ renderRequests(); },
+  partidos:     function(){ renderMatches(); },
+  abiertas:     function(){ renderInvites(); },
+  perfil:       function(){ renderProfile(); },
+  escalerilla:  function(){ renderLadder(); },
+  ranking:      function(){ renderRanking(); },
+  canchas:      function(){ renderCourts(); },
+  admin:        function(){ renderAdmin(); }
+};
+
+function vistaActiva(){
+  const v = document.querySelector('.view.active');
+  return v ? v.id.replace('view-', '') : 'inicio';
+}
+
+function renderVista(nombre){
+  const fn = VISTAS[nombre];
+  if(fn) fn();
+}
+
 function render(){
   renderSession();
-  renderAdmin();
-  renderHome();
-  renderPlayers();
-  renderRequests();
-  renderMatches();
-  renderProfile();
-  renderInvites();
-  renderLadder();
-  renderRanking();
-  renderCourts();
+  renderVista(vistaActiva());
   renderBadges();
 }
 
@@ -1687,6 +1733,13 @@ function renderBadges(){
   const mb = $('matchBadge');
   mb.textContent = next;
   mb.style.display = next ? '' : 'none';
+
+  // Va acá y no dentro de su vista: los contadores tienen que estar al día
+  // aunque el jugador esté mirando otra pestaña.
+  const abiertas = invitesToConfirm().length;
+  const ob = $('openBadge');
+  ob.textContent = abiertas;
+  ob.style.display = abiertas ? '' : 'none';
 }
 
 /* ---------- Jugadores ---------- */
@@ -1753,13 +1806,14 @@ function renderPlayers(){
     return;
   }
 
+  const yo = me();   // se resolvía una vez por tarjeta, y tres veces dentro de cada una
   $('playersGrid').innerHTML = list.map(function(p){
     const c = club(p.clubId);
     const st = statsOf(p.id);
-    const isMe = p.id === me().id;
+    const isMe = p.id === yo.id;
     const pend = state.requests.some(function(r){
       return r.status === 'pendiente' &&
-        ((r.fromId === me().id && r.toId === p.id) || (r.fromId === p.id && r.toId === me().id));
+        ((r.fromId === yo.id && r.toId === p.id) || (r.fromId === p.id && r.toId === yo.id));
     });
     return '' +
     '<article class="pcard'+(isMe?' is-me':'')+'">' +
@@ -2029,10 +2083,6 @@ function renderInvites(){
     ? otras.map(function(i){ return inviteLine(i, 'otra'); }).join('')
     : '<div class="empty">Nadie ha publicado horarios todavía. Sé el primero.</div>';
 
-  const pend = invitesToConfirm().length;
-  const badge = $('openBadge');
-  badge.textContent = pend;
-  badge.style.display = pend ? '' : 'none';
 }
 
 /* ---------- Escalerilla ---------- */
@@ -3323,10 +3373,12 @@ function activateView(name){
   });
   document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
   view.classList.add('active');
+  renderVista(name);          // la vista se dibuja al entrar en ella
   window.scrollTo(0, 0);
 }
 
 function activateProfilePane(pane){
+  renderProfile();
   document.querySelectorAll('#profileSeg .seg-btn').forEach(function(b){
     b.classList.toggle('active', b.dataset.pane === pane);
   });
@@ -3567,11 +3619,12 @@ function listenForChanges(){
   if(realtimeOn) return;
   realtimeOn = true;
   sb.channel('squashmatch')
-    .on('postgres_changes', { event:'*', schema:'public', table:'challenges' }, refresh)
-    .on('postgres_changes', { event:'*', schema:'public', table:'bookings' },   refresh)
-    .on('postgres_changes', { event:'*', schema:'public', table:'profiles' },   refresh)
-    .on('postgres_changes', { event:'*', schema:'public', table:'open_invites' }, refresh)
-    .on('postgres_changes', { event:'*', schema:'public', table:'ladder_members' }, refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'challenges' },     refreshSoon)
+    .on('postgres_changes', { event:'*', schema:'public', table:'bookings' },       refreshSoon)
+    .on('postgres_changes', { event:'*', schema:'public', table:'profiles' },       refreshSoon)
+    .on('postgres_changes', { event:'*', schema:'public', table:'open_invites' },   refreshSoon)
+    .on('postgres_changes', { event:'*', schema:'public', table:'ladder_members' }, refreshSoon)
+    .on('postgres_changes', { event:'*', schema:'public', table:'rating_history' }, refreshSoon)
     .subscribe();
 }
 
