@@ -3745,7 +3745,7 @@ function showApp(){
   document.querySelector('.topbar').hidden = false;
   document.querySelector('main').hidden = false;
   render();
-  activateView('inicio');
+  activateView(me() && me().staff ? 'club' : 'inicio');
 }
 
 /* ---------- Entrada y salida ---------- */
@@ -3775,8 +3775,7 @@ async function enterApp(session){
   listenForChanges();
 
   if(me() && me().staff){
-    showApp();
-    activateView('club');
+    showApp();   // entra directo a Mi club
     return;
   }
 
@@ -3909,12 +3908,22 @@ function renderSession(){
   $('tabAdmin').hidden = !admin;
   $('tabClub').hidden = !isClubAdmin();
 
-  // La cuenta del club no juega: las secciones de jugador no le sirven.
+  // La cuenta del club no juega: las secciones de jugador no le sirven. Inicio
+  // tampoco, porque le muestra saludo y desafíos: su portada es Mi club, y para
+  // eso pasa al primer lugar. El orden de los jugadores no se toca.
   const esStaff = !!(p && p.staff);
-  ['partidos','solicitudes','perfil'].forEach(function(v){
+  ['partidos','solicitudes','perfil','inicio'].forEach(function(v){
     const t = document.querySelector('.tab[data-view="'+v+'"]');
     if(t) t.hidden = esStaff;
   });
+
+  const tabs = $('tabs');
+  const tabClub = $('tabClub');
+  if(esStaff && tabs.firstElementChild !== tabClub){
+    tabs.insertBefore(tabClub, tabs.firstElementChild);
+  } else if(!esStaff && tabs.lastElementChild !== tabClub && tabClub.parentNode === tabs){
+    tabs.appendChild(tabClub);
+  }
   if(p){
     const cl = club(p.clubId);
     $('userChip').innerHTML = esc(p.name) + ' <small>' + esc(cl ? cl.name : '') + '</small>';
