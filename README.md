@@ -38,13 +38,33 @@ archivo con doble clic ya no sirve.
     reserva; desde cada reserva se anota, se cobra o se cancela.
   - **Por cobrar** ordenado por días de atraso, y **Pagados** con la fecha en que se marcó
     cada uno y la opción de deshacer.
+  - **Gestión**, con período de 7, 30 o 90 días:
+    - Ocupación media, reservas, recaudado, por cobrar y tasa de cancelación. La ocupación
+      se muestra también como "16 de 960 bloques usados", para que se vea de dónde sale el
+      número: el denominador es la capacidad teórica de 07:00 a 22:00 todos los días, que
+      ningún club opera. Con el horario real del club, el porcentaje pasa a significar algo.
+    - **Mapa de calor** de hora por día de la semana: dónde está la demanda y dónde sobran
+      canchas.
+    - **Quién juega en cada horario**, pensado para llenar una cancha vacía: se elige un
+      turno o una hora exacta, opcionalmente un día de la semana, y aparecen los que más
+      juegan ahí, con hace cuánto vinieron por última vez y qué días declararon poder. La
+      lista parte en tres y se amplía de tres en tres. Cuando no se elige día, una casilla
+      permite dejar fuera el fin de semana: el sábado a las 10 es peak y el martes a las 10
+      está vacío, así que contarlos juntos esconde las dos cosas.
+    - Uso de cada cancha y quiénes juegan más en el período. Las reservas que el club carga
+      para gente sin cuenta quedan fuera de los rankings de jugadores, porque no tienen
+      jugadores identificados.
   - **Descarga del estado de cuenta** en planilla, con todos los movimientos y el total por
     cobrar a esa fecha. Es el respaldo del club: el plan gratis de Supabase **no hace
     copias de seguridad** —empiezan en el plan pagado— así que la cobranza no puede vivir
     en un solo lugar. El archivo se genera en el navegador y lleva la fecha en el nombre.
   - La cuenta del club no juega: no aparece en el directorio, la escalerilla ni el ranking,
-    y solo ve las secciones que le sirven. *Canchas abiertas* la conserva como consulta,
+    y solo ve las secciones que le sirven —*Mi club* es su portada y va primero, en el lugar
+    que para los jugadores ocupa *Inicio*. *Canchas abiertas* la conserva como consulta,
     para ver quién está buscando rival, pero sin publicar ni sumarse.
+  - **El club no ve el teléfono ni el correo de los jugadores.** Es lo que le falta para
+    cerrar el círculo de la gestión activa —ver quién suele jugar a esa hora y llamarlo—
+    y está pendiente a propósito: son datos de terceros y conviene avisarles antes.
 - **Panel de administración de la app** — de solo lectura, visible para las cuentas con
   `role = 'admin'`: totales de cuentas, desafíos pendientes, reservas vigentes y partidos
   jugados, más el listado de jugadores con su club, puesto y récord.
@@ -79,6 +99,10 @@ archivo con doble clic ya no sirve.
   muestra el estado real de cada cancha en ese bloque (disponible u ocupada) y deja pedir
   una en particular, porque los jugadores suelen tener preferencia; también existe la
   opción "cualquiera disponible". El envío se bloquea si el horario no sirve.
+- **Los desafíos y las publicaciones vencen solos** — cuando pasa su horario dejan de
+  aparecer en las listas, los avisos y los contadores, y dejan de bloquear un desafío nuevo
+  para ese bloque. No tiene sentido pedir respuesta por un partido que ya no puede ocurrir,
+  y el servidor tampoco deja aceptarlos.
 - **Reserva inmediata al aceptar** — se reserva la cancha pedida, o la primera libre si no
   se pidió ninguna. Si esa cancha se ocupó mientras tanto, el desafío queda caducado
   indicando el motivo y si la otra cancha sigue libre; además, los demás desafíos
