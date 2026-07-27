@@ -1015,7 +1015,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <p class="section-title">Quién juega en cada horario</p>
         <p class="note">Para llenar una cancha vacía: elige el bloque y aparecen los que
           más juegan a esa hora, con cuándo vinieron por última vez y qué días suelen poder.</p>
-        <div class="filters" style="grid-template-columns:1fr;margin-bottom:16px">
+        <div class="filters" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
           <div class="field">
             <label for="gVentana">Ventana de horario</label>
             <select id="gVentana">
@@ -1027,6 +1027,24 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
               </optgroup>
               <optgroup label="Hora exacta" id="gHoras"></optgroup>
             </select>
+          </div>
+          <div class="field">
+            <label for="gDia">Día</label>
+            <select id="gDia">
+              <option value="todos" selected>Todos los días</option>
+              <option value="1">Lunes</option>
+              <option value="2">Martes</option>
+              <option value="3">Miércoles</option>
+              <option value="4">Jueves</option>
+              <option value="5">Viernes</option>
+              <option value="6">Sábado</option>
+              <option value="0">Domingo</option>
+            </select>
+            <label class="day" id="gFindeCaja" style="margin-top:10px;display:inline-block">
+              <input type="checkbox" id="gFinde" checked><span>Considera fin de semana</span>
+            </label>
+            <span class="hint" id="gFindeNota">Un sábado a las 10 no se compara con un
+              martes a las 10: desmárcalo para contar solo días de semana.</span>
           </div>
         </div>
         <div id="gVentanaLista"></div>
@@ -2592,13 +2610,19 @@ const TURNOS = {
 
 let ventanaTop = 3;   // cuántos se muestran; el botón la va ampliando
 
-function quienJuegaEn(clubId, dias, ventana){
+function quienJuegaEn(clubId, dias, ventana, dia, incluirFinde){
   const partes = String(ventana).split('|');
   const esTurno = partes[0] === 't';
   const valor = partes[1];
   const dentro = esTurno
     ? TURNOS[valor] || function(){ return false; }
     : function(h){ return h === parseInt(valor, 10); };
+
+  /* El día importa tanto como la hora: en un club, el sábado a las 10 es peak y
+     el martes a las 10 está vacío. Contarlos juntos esconde las dos cosas. */
+  const diaOk = (dia === 'todos')
+    ? function(d){ return incluirFinde || (d !== 0 && d !== 6); }
+    : function(d){ return d === parseInt(dia, 10); };
 
   const hoy = new Date();
   const desde = new Date();
@@ -2610,6 +2634,7 @@ function quienJuegaEn(clubId, dias, ventana){
     if(b.clubId !== clubId || b.status !== 'confirmada') return;
     if(b.date < desdeISO || b.date > hastaISO) return;
     if(!dentro(parseInt(b.time.slice(0, 2), 10))) return;
+    if(!diaOk(parseISO(b.date).getDay())) return;
     [b.playerA, b.playerB].forEach(function(id){
       if(!id) return;
       if(!conteo[id]) conteo[id] = { id:id, partidos:0, ultima:'' };
@@ -2627,8 +2652,19 @@ function quienJuegaEn(clubId, dias, ventana){
 
 function renderVentana(clubId, dias){
   const ventana = $('gVentana').value;
-  const lista = quienJuegaEn(clubId, dias, ventana);
-  const etiqueta = $('gVentana').selectedOptions[0].textContent;
+  const dia = $('gDia').value;
+  const incluirFinde = $('gFinde').checked;
+
+  // La casilla del fin de semana solo tiene sentido cuando no se eligió un día.
+  const general = dia === 'todos';
+  $('gFindeCaja').hidden = !general;
+  $('gFindeNota').hidden = !general;
+
+  const lista = quienJuegaEn(clubId, dias, ventana, dia, incluirFinde);
+  const etiqueta = $('gVentana').selectedOptions[0].textContent +
+    (general
+      ? (incluirFinde ? ', todos los días' : ', solo días de semana')
+      : ', ' + $('gDia').selectedOptions[0].textContent.toLowerCase());
 
   if(!lista.length){
     $('gVentanaLista').innerHTML = '<div class="empty">Nadie ha jugado en ' + esc(etiqueta) +
@@ -2640,6 +2676,8 @@ function renderVentana(clubId, dias){
   const faltan = lista.length - visibles.length;
 
   $('gVentanaLista').innerHTML =
+    '<p class="note" style="margin:0 0 12px">' + esc(etiqueta) + ' · ' +
+      lista.length + (lista.length === 1 ? ' jugador' : ' jugadores') + '</p>' +
     '<div class="rank-list">' + visibles.map(function(x, i){
       const j = player(x.id);
       const disp = j ? availabilityText(j) : '';
@@ -4269,7 +4307,9 @@ function bindEvents(){
   ['clClub','clDate','gPeriodo'].forEach(function(id){
     $(id).addEventListener('input', function(){ ventanaTop = 3; renderClub(); });
   });
-  $('gVentana').addEventListener('change', function(){ ventanaTop = 3; renderClub(); });
+  ['gVentana','gDia','gFinde'].forEach(function(id){
+    $(id).addEventListener('change', function(){ ventanaTop = 3; renderClub(); });
+  });
 
   $('btnExport').addEventListener('click', function(){
     const r = descargarEstadoCuenta($('clClub').value);
