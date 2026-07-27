@@ -1011,6 +1011,27 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div id="gMapa"></div>
       </div>
 
+      <div class="box">
+        <p class="section-title">Quién juega en cada horario</p>
+        <p class="note">Para llenar una cancha vacía: elige el bloque y aparecen los que
+          más juegan a esa hora, con cuándo vinieron por última vez y qué días suelen poder.</p>
+        <div class="filters" style="grid-template-columns:1fr;margin-bottom:16px">
+          <div class="field">
+            <label for="gVentana">Ventana de horario</label>
+            <select id="gVentana">
+              <optgroup label="Turnos">
+                <option value="t|Mañana">Mañana · 07 a 12</option>
+                <option value="t|Mediodía">Mediodía · 12 a 15</option>
+                <option value="t|Tarde">Tarde · 15 a 19</option>
+                <option value="t|Noche" selected>Noche · 19 a 22</option>
+              </optgroup>
+              <optgroup label="Hora exacta" id="gHoras"></optgroup>
+            </select>
+          </div>
+        </div>
+        <div id="gVentanaLista"></div>
+      </div>
+
       <div class="split">
         <div class="box">
           <p class="section-title">Uso por cancha</p>
@@ -2561,6 +2582,95 @@ function datosGestion(clubId, dias){
   };
 }
 
+/* Turnos: mismos tramos que usan los jugadores para declarar cuándo pueden. */
+const TURNOS = {
+  'Mañana':   function(h){ return h >= 7 && h < 12; },
+  'Mediodía': function(h){ return h >= 12 && h < 15; },
+  'Tarde':    function(h){ return h >= 15 && h < 19; },
+  'Noche':    function(h){ return h >= 19; }
+};
+
+let ventanaTop = 3;   // cuántos se muestran; el botón la va ampliando
+
+function quienJuegaEn(clubId, dias, ventana){
+  const partes = String(ventana).split('|');
+  const esTurno = partes[0] === 't';
+  const valor = partes[1];
+  const dentro = esTurno
+    ? TURNOS[valor] || function(){ return false; }
+    : function(h){ return h === parseInt(valor, 10); };
+
+  const hoy = new Date();
+  const desde = new Date();
+  desde.setDate(desde.getDate() - (dias - 1));
+  const desdeISO = isoOf(desde), hastaISO = isoOf(hoy);
+
+  const conteo = {};
+  state.bookings.forEach(function(b){
+    if(b.clubId !== clubId || b.status !== 'confirmada') return;
+    if(b.date < desdeISO || b.date > hastaISO) return;
+    if(!dentro(parseInt(b.time.slice(0, 2), 10))) return;
+    [b.playerA, b.playerB].forEach(function(id){
+      if(!id) return;
+      if(!conteo[id]) conteo[id] = { id:id, partidos:0, ultima:'' };
+      conteo[id].partidos++;
+      if(b.date > conteo[id].ultima) conteo[id].ultima = b.date;
+    });
+  });
+
+  return Object.keys(conteo).map(function(k){ return conteo[k]; })
+    .sort(function(a, b){
+      if(b.partidos !== a.partidos) return b.partidos - a.partidos;
+      return String(b.ultima).localeCompare(String(a.ultima));
+    });
+}
+
+function renderVentana(clubId, dias){
+  const ventana = $('gVentana').value;
+  const lista = quienJuegaEn(clubId, dias, ventana);
+  const etiqueta = $('gVentana').selectedOptions[0].textContent;
+
+  if(!lista.length){
+    $('gVentanaLista').innerHTML = '<div class="empty">Nadie ha jugado en ' + esc(etiqueta) +
+      ' durante el período. Ese bloque está sin público conocido.</div>';
+    return;
+  }
+
+  const visibles = lista.slice(0, ventanaTop);
+  const faltan = lista.length - visibles.length;
+
+  $('gVentanaLista').innerHTML =
+    '<div class="rank-list">' + visibles.map(function(x, i){
+      const j = player(x.id);
+      const disp = j ? availabilityText(j) : '';
+      const dias_ = x.ultima ? diasDesde(x.ultima) : null;
+      return '<div class="rank-item">' +
+        '<div class="avatar' + (i === 0 ? '' : ' alt') + '">' +
+          esc(initials(j ? j.name : '?')) + '</div>' +
+        '<div class="grow">' +
+          '<div>' + esc(j ? j.name : 'Jugador') +
+            (j && j.category ? ' <span class="chip cat">' + esc(j.category) + '</span>' : '') + '</div>' +
+          '<small>' + x.partidos + (x.partidos === 1 ? ' partido' : ' partidos') +
+            ' en este horario' +
+            (dias_ === null ? '' : ' · última vez ' + (dias_ === 0 ? 'hoy' : 'hace ' + dias_ +
+              (dias_ === 1 ? ' día' : ' días'))) +
+            (disp ? ' · puede ' + esc(disp) : '') + '</small>' +
+          '<div class="rank-bar"><i style="width:' +
+            Math.round(x.partidos / lista[0].partidos * 100) + '%"></i></div>' +
+        '</div>' +
+      '</div>';
+    }).join('') + '</div>' +
+    '<div class="btn-row" style="margin-top:14px">' +
+      (faltan
+        ? '<button class="btn sm" data-vermas="1">Mostrar ' + Math.min(3, faltan) + ' más' +
+          (faltan > 3 ? ' (quedan ' + faltan + ')' : '') + '</button>'
+        : '') +
+      (ventanaTop > 3
+        ? '<button class="btn ghost sm" data-vermenos="1">Ver solo los 3 primeros</button>'
+        : '') +
+    '</div>';
+}
+
 function renderGestion(clubId){
   const dias = parseInt($('gPeriodo').value, 10) || 30;
   const g = datosGestion(clubId, dias);
@@ -2605,6 +2715,8 @@ function renderGestion(clubId){
     orden.map(function(d){ return '<th>' + dias7[d] + '</th>'; }).join('') +
     '</tr></thead><tbody>' + filas + '</tbody></table></div>' +
     (maximo ? '' : '<div class="empty" style="margin-top:12px">Sin reservas en el período.</div>');
+
+  renderVentana(clubId, dias);
 
   // --- Uso por cancha ---
   const totalCanchas = Object.keys(g.porCancha)
@@ -4020,6 +4132,9 @@ function fillClubSelects(){
   fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
   fillSelect($('cClub'), clubOptions(), null, null);
   fillSelect($('lClub'), clubOptions(), null, null);
+  $('gHoras').innerHTML = SLOTS.map(function(t){
+    return '<option value="h|' + parseInt(t, 10) + '">' + t + ' hrs</option>';
+  }).join('');
   fillSelect($('chClub'), clubOptions(), null, null);
   fillSelect($('ivClub'), clubOptions(), null, null);
   fillSelect($('oClub'), clubOptions(), 'Todos los clubes', 'todos');
@@ -4151,7 +4266,10 @@ function bindEvents(){
   });
   $('rCat').addEventListener('change', renderRanking);
   $('lClub').addEventListener('change', renderLadder);
-  ['clClub','clDate','gPeriodo'].forEach(function(id){ $(id).addEventListener('input', renderClub); });
+  ['clClub','clDate','gPeriodo'].forEach(function(id){
+    $(id).addEventListener('input', function(){ ventanaTop = 3; renderClub(); });
+  });
+  $('gVentana').addEventListener('change', function(){ ventanaTop = 3; renderClub(); });
 
   $('btnExport').addEventListener('click', function(){
     const r = descargarEstadoCuenta($('clClub').value);
@@ -4224,7 +4342,8 @@ function bindEvents(){
       '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],' +
       '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
       '[data-rejectinvite],[data-cancelinvite],[data-joinladder],[data-leaveladder],' +
-      '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel]');
+      '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
+      '[data-vermas],[data-vermenos]');
     if(!el) return;
     const d = el.dataset;
 
@@ -4261,6 +4380,12 @@ function bindEvents(){
           await cancelBooking(d.cancelbooking);
           toast('Partido cancelado, cancha liberada.');
         }
+      } else if(d.vermas){
+        ventanaTop += 3;
+        renderClub();
+      } else if(d.vermenos){
+        ventanaTop = 3;
+        renderClub();
       } else if(d.clubbook){
         abrirReservaClub(d.clubbook);
       } else if(d.clubnote){
