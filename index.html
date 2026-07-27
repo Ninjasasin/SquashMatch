@@ -1780,7 +1780,7 @@ async function sendRequest(toId, clubId, date, time, msg, court, ladderClubId){
   const check = checkSlot(clubId, date, time, fromId, toId, court);
   if(!check.ok) return { ok:false, reason:check.reason };
 
-  const dup = state.requests.some(function(r){
+  const dup = requestsLive().some(function(r){
     return r.status === 'pendiente' && r.date === date && r.time === time &&
            ((r.fromId === fromId && r.toId === toId) || (r.fromId === toId && r.toId === fromId));
   });
@@ -1955,7 +1955,7 @@ function render(){
 }
 
 function renderBadges(){
-  const pend = state.requests.filter(function(r){ return r.status === 'pendiente' && r.toId === me().id; }).length;
+  const pend = requestsLive().filter(function(r){ return r.status === 'pendiente' && r.toId === me().id; }).length;
   const badge = $('reqBadge');
   badge.textContent = pend;
   badge.style.display = pend ? '' : 'none';
@@ -2053,7 +2053,7 @@ function renderPlayers(){
     const c = club(p.clubId);
     const st = statsOf(p.id);
     const isMe = p.id === yo.id;
-    const pend = state.requests.some(function(r){
+    const pend = requestsLive().some(function(r){
       return r.status === 'pendiente' &&
         ((r.fromId === yo.id && r.toId === p.id) || (r.fromId === p.id && r.toId === yo.id));
     });
@@ -2120,7 +2120,7 @@ function reqLine(r, dir){
 
 function renderRequests(){
   const mine = me().id;
-  const ordered = state.requests.slice().sort(function(a,b){
+  const ordered = requestsLive().slice().sort(function(a,b){
     if((a.status === 'pendiente') !== (b.status === 'pendiente')) return a.status === 'pendiente' ? -1 : 1;
     return b.createdAt - a.createdAt;
   });
@@ -2643,6 +2643,18 @@ function renderGestion(clubId){
 }
 
 /* ---------- Canchas abiertas ---------- */
+/* Un desafío pendiente cuyo horario ya pasó no se puede aceptar —el servidor lo
+   rechaza— así que deja de mostrarse: no tiene sentido pedirle una respuesta a
+   alguien por un partido que no va a ocurrir. La fila queda en la base como
+   registro, pero fuera de las listas, los avisos y los contadores. */
+function requestExpired(r){
+  return r.status === 'pendiente' && isPast(r.date, r.time);
+}
+
+function requestsLive(){
+  return state.requests.filter(function(r){ return !requestExpired(r); });
+}
+
 function invitesLive(){
   return state.invites.filter(function(i){
     return (i.status === 'abierta' || i.status === 'postulada') && !isPast(i.date, i.time);
@@ -2802,7 +2814,7 @@ function renderLadder(){
     const meDesafia = myPos && pos > myPos && pos - myPos <= LADDER_RANGE;
 
     // ¿Ya hay un desafío de escalerilla pendiente entre ambos?
-    const pendiente = state.requests.some(function(r){
+    const pendiente = requestsLive().some(function(r){
       return r.status === 'pendiente' && r.ladder && r.clubId === clubId &&
         ((r.fromId === mine && r.toId === id) || (r.fromId === id && r.toId === mine));
     });
@@ -3022,7 +3034,7 @@ function buildNotifications(){
   const mine = me().id;
   const list = [];
 
-  state.requests.forEach(function(r){
+  requestsLive().forEach(function(r){
     if(r.fromId !== mine && r.toId !== mine) return;
     const other = player(r.fromId === mine ? r.toId : r.fromId);
     const c = club(r.clubId);
@@ -3129,7 +3141,7 @@ function renderHome(){
   const hora = new Date().getHours();
   const saludo = hora < 12 ? 'Buenos días' : (hora < 20 ? 'Buenas tardes' : 'Buenas noches');
   const next7 = upcomingWithin(7);
-  const pend = state.requests.filter(function(r){ return r.status === 'pendiente' && r.toId === p.id; }).length;
+  const pend = requestsLive().filter(function(r){ return r.status === 'pendiente' && r.toId === p.id; }).length;
 
   const resumen = next7.length
     ? 'Tienes ' + next7.length + (next7.length === 1 ? ' partido' : ' partidos') + ' esta semana' +
@@ -3429,7 +3441,7 @@ function renderPanelPane(p, s){
     ? s.upcoming.slice(0,3).map(function(b){ return matchLine(b, false); }).join('')
     : '<div class="empty">No tienes partidos agendados. Anda a <b>Jugadores</b> y desafía a alguien.</div>';
 
-  const pend = state.requests.filter(function(r){ return r.status === 'pendiente' && r.toId === p.id; });
+  const pend = requestsLive().filter(function(r){ return r.status === 'pendiente' && r.toId === p.id; });
   $('panelPending').innerHTML = pend.length
     ? pend.map(function(r){ return reqLine(r, 'in'); }).join('')
     : '<div class="empty">No tienes desafíos esperando respuesta.</div>';
@@ -3936,7 +3948,7 @@ function renderSession(){
 function renderAdmin(){
   if(!isAdmin()) return;
 
-  const pendientes = state.requests.filter(function(r){ return r.status === 'pendiente'; }).length;
+  const pendientes = requestsLive().filter(function(r){ return r.status === 'pendiente'; }).length;
   const reservas = state.bookings.filter(function(b){
     return b.status === 'confirmada' && !isPast(b.date, b.time);
   }).length;
