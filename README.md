@@ -278,6 +278,13 @@ Para borrarlas, con sus partidos y desafíos:
 delete from auth.users where email like '%@squash.cl';
 ```
 
+Y para dejar la base presentable después de trabajar en ella,
+[`supabase/limpiar-pruebas.sql`](supabase/limpiar-pruebas.sql) borra lo que dejan las
+verificaciones —desafíos y publicaciones con textos de prueba, reservas canceladas que solo
+existieron para comprobar la cancelación, restos en las biografías— sin tocar jugadores,
+partidos, ratings, escalerillas ni cobros reales. La app no permite eliminar filas, solo
+cancelarlas, así que este aseo va por SQL a propósito.
+
 ## Limitaciones actuales
 
 1. **La app no se conecta con el sistema de reservas que el club ya use.** Ningún club de
