@@ -106,8 +106,30 @@ archivo con doble clic ya no sirve.
   indicando el motivo y si la otra cancha sigue libre; además, los demás desafíos
   pendientes de esos dos jugadores en el mismo bloque se anulan solos.
 - **Clubes y canchas** — dos clubes (Club Sirio y Santiago Squash) con dos canchas cada
-  uno, Cancha 1 y Cancha 2. La grilla de canchas muestra el estado de cada una hora por
-  hora, con quién juega en la que está ocupada, y oculta los bloques ya pasados.
+  uno, Cancha 1 y Cancha 2. La grilla muestra el estado de cada cancha turno por turno,
+  con quién juega en la que está ocupada, y oculta los bloques ya pasados.
+- **La grilla de turnos es de cada club, no de la app** — hora de apertura, hora del
+  último turno y cuánto dura cada uno viven en la tabla `clubs`. El Club Sirio corre de
+  **08:00 a 22:00 en turnos de 40 minutos**: 22 turnos por cancha, 44 entre las dos.
+  - Antes la app asumía bloques de una hora, que no es como trabaja ningún club que
+    hayamos visto. Con la grilla equivocada, el conteo de la app nunca iba a cuadrar con
+    el que el club lleva en su cuaderno, y ese conteo es justamente lo que se les vende.
+  - Como las horas redondas casi no existen en una grilla de 40 minutos —el Sirio no
+    tiene las 19:00, tiene 18:40 y 19:20— los modales proponen el turno **más cercano**
+    a la hora que uno tenía en mente, en vez de una hora fija que podría no existir.
+  - Cambiar de club dentro de un modal recarga los turnos: dos clubes no tienen por qué
+    compartir grilla.
+- **Reporte de turnos** — el número que los ejecutivos del club cuentan a mano en el
+  cuaderno para saber si llegaron a su meta del día:
+  - **Turnos reservados por día contra la meta.** La meta vive en `clubs`
+    (`goal_weekday` y `goal_weekend`): el Sirio pide 16 turnos de lunes a viernes y 8 los
+    sábados y domingos. Es del club completo, sin importar quién esté cubriendo el turno.
+  - Resumen del período: turnos de hoy contra la meta, promedio diario sobre el total
+    disponible, cuántos días se cumplió la meta y **qué porcentaje se reservó por la app**
+    sin pasar por el mostrador.
+  - Gráfico de barras día por día, con la marca de la meta sobre cada barra —que baja
+    sola el fin de semana— y el detalle en tabla, del día más reciente al más antiguo.
+  - Las canceladas no cuentan: la cancha quedó libre.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
   cupo, e historial con el marcador.
 - **Resultados en dos pasos** — uno de los dos jugadores carga quién ganó y el marcador
@@ -162,6 +184,9 @@ Lo que corre en el navegador:
   vuelve a leer después de cada acción.
 - `checkSlot()` / `courtFree()` validan la disponibilidad para la interfaz: avisan
   temprano y evitan viajes inútiles. La decisión real la toma el servidor.
+- `slotsOf()` arma la grilla de un club desde su horario y la guarda; `slotCercano()`
+  elige el turno más parecido a una hora deseada, y `metaDelDia()` resuelve si ese día
+  corre la meta de semana o la de fin de semana.
 
 Lo que corre en el servidor, porque es donde se puede garantizar:
 

@@ -14,6 +14,24 @@ create table if not exists public.clubs (
   courts int  not null check (courts > 0)
 );
 
+-- La grilla de turnos es de cada club, no de la app: el Club Sirio corre de
+-- 08:00 a 22:00 en turnos de 40 minutos, que son 22 turnos por cancha y 44
+-- entre las dos. Antes la app asumía bloques de una hora, que no es como
+-- trabaja ningún club de los que vimos.
+--
+-- goal_weekday y goal_weekend son la meta de turnos reservados al día que usan
+-- los ejecutivos del club para su bono. Es del club completo, sin importar
+-- quién esté cubriendo el turno, y el fin de semana es más baja.
+alter table public.clubs
+  add column if not exists opens        text not null default '08:00',
+  add column if not exists last_slot    text not null default '22:00',
+  add column if not exists slot_minutes int  not null default 40
+    check (slot_minutes between 10 and 180),
+  add column if not exists goal_weekday int  not null default 16 check (goal_weekday >= 0),
+  add column if not exists goal_weekend int  not null default 8  check (goal_weekend >= 0);
+
+-- El insert de abajo no toca estas columnas a propósito: si el club ajusta su
+-- horario o su meta, volver a correr el esquema no se los pisa.
 insert into public.clubs (id, name, comuna, courts) values
   ('c1', 'Club Sirio',      'Las Condes',  2),
   ('c2', 'Santiago Squash', 'Providencia', 2)

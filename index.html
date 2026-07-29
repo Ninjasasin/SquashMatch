@@ -373,6 +373,10 @@ td.num, th.num{text-align:right;font-variant-numeric:tabular-nums}
 .news-full p:last-child{margin-bottom:0}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 
+#rpTabla td:first-child{white-space:nowrap}
+.dia-ok{color:var(--lime)}
+.dia-corto{color:var(--amber)}
+
 .mapa{width:100%;border-collapse:separate;border-spacing:3px;font-size:11px}
 .mapa th{background:none;color:var(--ink-faint);font-size:10px;padding:2px;text-align:center;
   text-transform:none;letter-spacing:0}
@@ -934,6 +938,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <button class="seg-btn active" data-cpane="agenda">Agenda del día</button>
         <button class="seg-btn" data-cpane="cobros">Por cobrar</button>
         <button class="seg-btn" data-cpane="historial">Pagados</button>
+        <button class="seg-btn" data-cpane="turnos">Reporte de turnos</button>
         <button class="seg-btn" data-cpane="gestion">Gestión</button>
       </div>
       <button class="btn sm" id="btnExport">Descargar estado de cuenta</button>
@@ -965,6 +970,49 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <div class="pane" id="cpane-historial">
       <p class="section-title">Últimos pagos registrados</p>
       <div class="list" id="clubPagados"></div>
+    </div>
+
+    <div class="pane" id="cpane-turnos">
+      <div class="filters" style="grid-template-columns:1fr">
+        <div class="field">
+          <label for="rpPeriodo">Período</label>
+          <select id="rpPeriodo">
+            <option value="7">Últimos 7 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="90">Últimos 90 días</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tiles" id="rpTiles"></div>
+
+      <div class="box">
+        <p class="section-title">Turnos reservados por día</p>
+        <p class="note">Cada barra es un día, sumando las dos canchas. La marca sobre la
+          barra es la meta de ese día. Verde si se llegó, naranjo si no.</p>
+        <div id="rpGrafico"></div>
+      </div>
+
+      <div class="box">
+        <p class="section-title">Detalle día por día</p>
+        <p class="note">El día más reciente arriba. <b>Por la app</b> son los turnos que
+          reservaron los jugadores solos, sin que nadie del club los cargara.</p>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Día</th>
+                <th class="num">Turnos</th>
+                <th class="num">Meta</th>
+                <th class="num">Dif.</th>
+                <th class="num">Por la app</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="rpTabla"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <div class="pane" id="cpane-gestion">
@@ -1300,7 +1348,54 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
    CONSTANTES
    ========================================================= */
 const CATEGORIES = ['Primera','Segunda','Tercera','Cuarta','Damas A','Damas B','Juvenil Sub-19','Máster +40','Máster +50'];
-const SLOTS = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
+/* La grilla de turnos la define cada club, no la app. El Club Sirio corre de
+   08:00 a 22:00 en turnos de 40 minutos: 22 turnos por cancha, 44 entre las dos.
+   Antes esto era una lista fija de horas redondas, que no es como trabaja
+   ningún club: por eso el conteo de la app nunca cuadraba con el del cuaderno. */
+let slotsCache = {};
+
+function minutosDe(hhmm){
+  const p = String(hhmm || '').split(':');
+  return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+}
+
+function horaDe(min){
+  return String(Math.floor(min / 60)).padStart(2, '0') + ':' +
+         String(min % 60).padStart(2, '0');
+}
+
+/** Turnos de un club, del primero al último, ya formateados como 'HH:MM'. */
+function slotsOf(clubId){
+  if(slotsCache[clubId]) return slotsCache[clubId];
+  const c = club(clubId);
+  if(!c) return [];
+  const paso = c.slotMinutes > 0 ? c.slotMinutes : 40;
+  const lista = [];
+  for(let m = minutosDe(c.opens); m <= minutosDe(c.lastSlot); m += paso){
+    lista.push(horaDe(m));
+  }
+  slotsCache[clubId] = lista;
+  return lista;
+}
+
+/* Con turnos de 40 minutos las horas redondas casi no existen: 19:00 no está en
+   la grilla del Sirio, pero 18:40 y 19:20 sí. Esto elige el turno más cercano a
+   la hora que uno tenía en mente. */
+function slotCercano(lista, objetivo){
+  if(!lista.length) return '';
+  const meta = minutosDe(objetivo);
+  return lista.reduce(function(mejor, t){
+    return Math.abs(minutosDe(t) - meta) < Math.abs(minutosDe(mejor) - meta) ? t : mejor;
+  });
+}
+
+/** Meta de turnos reservados para ese día: el fin de semana es más baja. */
+function metaDelDia(clubId, iso){
+  const c = club(clubId);
+  if(!c) return 0;
+  const d = parseISO(iso).getDay();
+  return (d === 0 || d === 6) ? c.goalWeekend : c.goalWeekday;
+}
 const HORIZON_DAYS = 45; // ventana de agenda hacia adelante
 
 /* Los clubes ahora vienen de la base de datos; se llena al cargar. */
@@ -1419,8 +1514,13 @@ async function fetchAll(){
 
   CLUBS = clubs.data.map(function(c){
     return { id:c.id, name:c.name, comuna:c.comuna, courts:c.courts,
-             price:c.court_price || 15000 };
+             price:c.court_price || 15000,
+             opens:c.opens || '08:00', lastSlot:c.last_slot || '22:00',
+             slotMinutes:c.slot_minutes || 40,
+             goalWeekday:c.goal_weekday == null ? 16 : c.goal_weekday,
+             goalWeekend:c.goal_weekend == null ? 8  : c.goal_weekend };
   });
+  slotsCache = {};   // el club pudo cambiar su horario desde la última carga
   state.clubs    = CLUBS;
   state.players  = profiles.data.map(mapProfile);
   state.requests = challenges.data.map(mapChallenge);
@@ -2254,7 +2354,7 @@ function renderClub(){
   $('clDateLabel').textContent = fmtDateLong(dia);
   $('clubAgendaTitle').textContent = c.name + ' · ' + fmtDate(dia);
 
-  $('clubAgenda').innerHTML = SLOTS.map(function(t){
+  $('clubAgenda').innerHTML = slotsOf(clubId).map(function(t){
     let filas = '';
     for(let n = 1; n <= c.courts; n++){
       const b = state.bookings.find(function(x){
@@ -2331,6 +2431,7 @@ function renderClub(){
     : '<div class="empty">No hay cobros pendientes. Todo al día.</div>';
 
   // --- Pagados ---
+  renderReporte(clubId);
   renderGestion(clubId);
 
   const recientes = pagados.slice().sort(function(a, b){ return b.paidAt - a.paidAt; }).slice(0, 25);
@@ -2439,6 +2540,123 @@ function descargarEstadoCuenta(clubId){
   return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
 }
 
+/* ---------- Reporte de turnos ---------- */
+/* Es el número que los ejecutivos del club cuentan a mano en el cuaderno para
+   saber si llegaron a su meta del día. Un turno es una cancha tomada en un
+   bloque; con dos canchas y 22 turnos cada una, el techo diario es 44.
+   Las canceladas no cuentan: la cancha quedó libre. */
+function turnosPorDia(clubId, dias){
+  const serie = [], porFecha = {};
+  for(let d = dias - 1; d >= 0; d--){
+    const day = new Date();
+    day.setDate(day.getDate() - d);
+    const iso = isoOf(day);
+    const fila = { iso:iso, dow:day.getDay(), total:0, app:0, club:0,
+                   meta:metaDelDia(clubId, iso) };
+    serie.push(fila);
+    porFecha[iso] = fila;
+  }
+
+  state.bookings.forEach(function(b){
+    if(b.clubId !== clubId || b.status !== 'confirmada') return;
+    const fila = porFecha[b.date];
+    if(!fila) return;
+    fila.total++;
+    if(b.source === 'club') fila.club++; else fila.app++;
+  });
+
+  return serie;
+}
+
+function renderReporte(clubId){
+  const c = club(clubId);
+  if(!c) return;
+  const dias = parseInt($('rpPeriodo').value, 10) || 30;
+  const serie = turnosPorDia(clubId, dias);
+  const hoy = serie[serie.length - 1];
+
+  const total    = serie.reduce(function(a, x){ return a + x.total; }, 0);
+  const porApp   = serie.reduce(function(a, x){ return a + x.app; }, 0);
+  const cumplen  = serie.filter(function(x){ return x.total >= x.meta; }).length;
+  const promedio = (total / serie.length).toFixed(1).replace('.', ',');
+  const techo    = c.courts * slotsOf(clubId).length;
+
+  // --- Resumen ---
+  $('rpTiles').innerHTML =
+    tile(hoy.total + ' de ' + hoy.meta, 'Turnos de hoy',
+         hoy.total >= hoy.meta
+           ? 'Meta cumplida'
+           : 'Faltan ' + (hoy.meta - hoy.total) + ' para la meta',
+         hoy.total >= hoy.meta ? 'good' : 'warn') +
+    tile(promedio, 'Promedio diario', 'Sobre ' + techo + ' turnos disponibles al día') +
+    tile(cumplen + ' de ' + serie.length, 'Días con la meta cumplida',
+         Math.round(cumplen / serie.length * 100) + '% del período',
+         cumplen / serie.length >= 0.5 ? 'good' : '') +
+    tile(total ? Math.round(porApp / total * 100) + '%' : '0%', 'Reservado por la app',
+         porApp + ' de ' + total + ' turnos, sin pasar por el mostrador');
+
+  // --- Gráfico de barras con la meta de cada día ---
+  const ancho = Math.max(serie.length * 17, 320);
+  const alto = 200, base = alto - 24, tope = 14;
+  const maxV = Math.max.apply(null, serie.map(function(x){
+    return Math.max(x.total, x.meta);
+  }).concat([1]));
+  const y  = function(v){ return base - (v / maxV) * (base - tope); };
+  const bw = ancho / serie.length;
+  // Con 90 días no caben todas las fechas: se rotula una de cada tantas.
+  const paso = Math.ceil(serie.length / 10);
+
+  const barras = serie.map(function(x, i){
+    const cx = i * bw, w = Math.max(bw - 4, 3);
+    const ok = x.total >= x.meta;
+    const color = ok ? 'var(--lime)' : 'var(--amber)';
+    const yMeta = y(x.meta);
+    return (x.total
+        ? '<rect x="' + (cx + 2).toFixed(1) + '" y="' + y(x.total).toFixed(1) +
+          '" width="' + w.toFixed(1) + '" height="' + (base - y(x.total)).toFixed(1) +
+          '" rx="2" fill="' + color + '" opacity="' + (ok ? '.95' : '.75') + '"></rect>'
+        : '') +
+      '<line x1="' + (cx + 1).toFixed(1) + '" x2="' + (cx + w + 3).toFixed(1) +
+        '" y1="' + yMeta.toFixed(1) + '" y2="' + yMeta.toFixed(1) +
+        '" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="3 2"></line>' +
+      '<title>' + esc(fmtDate(x.iso)) + ' · ' + x.total + ' turnos · meta ' + x.meta + '</title>' +
+      (i % paso === 0
+        // La primera y la última se alinean hacia adentro para no salirse del dibujo.
+        ? '<text x="' + (i === 0 ? 0 : (i + paso >= serie.length ? ancho : cx + bw / 2)).toFixed(1) +
+          '" y="' + (alto - 6) + '" text-anchor="' +
+          (i === 0 ? 'start' : (i + paso >= serie.length ? 'end' : 'middle')) +
+          '" font-size="9" fill="var(--ink-faint)">' +
+          x.iso.slice(8) + '/' + x.iso.slice(5, 7) + '</text>'
+        : '');
+  }).join('');
+
+  $('rpGrafico').innerHTML =
+    '<div class="tablewrap" style="border:none;background:none">' +
+      '<svg viewBox="0 0 ' + ancho + ' ' + alto + '" width="' + ancho + '" height="' + alto + '" ' +
+        'style="max-width:none;display:block">' +
+        '<line x1="0" x2="' + ancho + '" y1="' + base + '" y2="' + base +
+          '" stroke="var(--line)" stroke-width="1"></line>' +
+        barras +
+      '</svg>' +
+    '</div>';
+
+  // --- Detalle, del día más reciente al más antiguo ---
+  $('rpTabla').innerHTML = serie.slice().reverse().map(function(x){
+    const dif = x.total - x.meta;
+    const ok = dif >= 0;
+    return '<tr>' +
+      '<td>' + esc(fmtDate(x.iso)) + '</td>' +
+      '<td class="num"><b>' + x.total + '</b></td>' +
+      '<td class="num">' + x.meta + '</td>' +
+      '<td class="num ' + (ok ? 'dia-ok' : 'dia-corto') + '">' +
+        (dif > 0 ? '+' : '') + dif + '</td>' +
+      '<td class="num">' + x.app + '</td>' +
+      '<td><span class="state ' + (ok ? 'ok' : 'pend') + '">' +
+        (ok ? 'meta cumplida' : 'bajo la meta') + '</span></td>' +
+    '</tr>';
+  }).join('');
+}
+
 /* ---------- Gestión del club ---------- */
 /* Todo se mide sobre días ya transcurridos: incluir los días futuros, que casi no
    tienen reservas, hundiría la ocupación y daría una foto falsa. */
@@ -2459,11 +2677,12 @@ function datosGestion(clubId, dias){
     return enRango(b) && b.status === 'cancelada';
   });
 
-  const bloquesTotales = c.courts * SLOTS.length * dias;
+  const turnos = slotsOf(clubId);
+  const bloquesTotales = c.courts * turnos.length * dias;
 
   // Mapa hora × día de la semana
   const mapa = {};
-  SLOTS.forEach(function(t){ mapa[t] = [0,0,0,0,0,0,0]; });
+  turnos.forEach(function(t){ mapa[t] = [0,0,0,0,0,0,0]; });
   const porCancha = {};
   const porJugador = {};
 
@@ -2609,7 +2828,23 @@ function renderVentana(clubId, dias){
     '</div>';
 }
 
+function llenarHorasGestion(clubId){
+  const horas = [];
+  slotsOf(clubId).forEach(function(t){
+    const h = parseInt(t, 10);
+    if(horas.indexOf(h) < 0) horas.push(h);
+  });
+  const previo = $('gVentana').value;
+  $('gHoras').innerHTML = horas.map(function(h){
+    return '<option value="h|' + h + '">' + horaDe(h * 60) + ' a ' + horaDe((h + 1) * 60) + '</option>';
+  }).join('');
+  if(previo && $('gVentana').querySelector('option[value="' + previo + '"]')){
+    $('gVentana').value = previo;
+  }
+}
+
 function renderGestion(clubId){
+  llenarHorasGestion(clubId);
   const dias = parseInt($('gPeriodo').value, 10) || 30;
   const g = datosGestion(clubId, dias);
   if(!g.club) return;
@@ -2626,13 +2861,14 @@ function renderGestion(clubId){
     tile(tasaCancel + '%', 'Cancelaciones', g.canceladas + ' de ' + (g.reservas + g.canceladas));
 
   // --- Mapa de calor ---
+  const turnos = slotsOf(clubId);
   let maximo = 0;
-  SLOTS.forEach(function(t){ g.mapa[t].forEach(function(v){ if(v > maximo) maximo = v; }); });
+  turnos.forEach(function(t){ g.mapa[t].forEach(function(v){ if(v > maximo) maximo = v; }); });
   const dias7 = ['dom','lun','mar','mié','jue','vie','sáb'];
   const orden = [1,2,3,4,5,6,0];   // la semana parte el lunes
 
   let filas = '';
-  SLOTS.forEach(function(t){
+  turnos.forEach(function(t){
     let celdas = '<td class="hora">' + t + '</td>';
     orden.forEach(function(d){
       const v = g.mapa[t][d];
@@ -2806,8 +3042,9 @@ function renderCourts(){
   if(!c) return;
 
   // Los bloques ya pasados no se muestran: no se pueden reservar y solo estorban.
-  const slots = SLOTS.filter(function(t){ return !isPast(date, t); });
-  const hidden = SLOTS.length - slots.length;
+  const todos = slotsOf(clubId);
+  const slots = todos.filter(function(t){ return !isPast(date, t); });
+  const hidden = todos.length - slots.length;
 
   $('cDateLabel').textContent = fmtDateLong(date);
   $('courtsTitle').textContent = c.name + ' · ' + c.courts + ' canchas · ' + fmtDate(date) +
@@ -3218,8 +3455,10 @@ function updateInviteAvail(){
 
 function openInviteModal(){
   inviteCourt = 0;
-  $('ivClub').value = me().clubId || (CLUBS[0] && CLUBS[0].id);
-  const def = defaultSlot();
+  const clubId = me().clubId || (CLUBS[0] && CLUBS[0].id);
+  $('ivClub').value = clubId;
+  llenarTurnos('ivTime', clubId);
+  const def = defaultSlot(clubId);
   $('ivDate').value = def.date;
   $('ivTime').value = def.time;
   $('ivCat').value = '';
@@ -3559,17 +3798,30 @@ let challengeTargetId = null;
 let challengeCourt = 0;      // 0 = cualquiera disponible
 
 /** Próximo bloque razonable para proponer: hoy si aún queda hora (con 1h de margen), si no mañana. */
-function defaultSlot(){
+function defaultSlot(clubId){
+  const grilla = slotsOf(clubId || (me() && me().clubId) || (CLUBS[0] || {}).id);
   const margin = Date.now() + 60*60*1000;
   for(let d = 0; d < HORIZON_DAYS; d++){
     const day = new Date();
     day.setDate(day.getDate() + d);
     const iso = isoOf(day);
-    const options = SLOTS.filter(function(t){ return slotDate(iso, t).getTime() > margin; });
+    const options = grilla.filter(function(t){ return slotDate(iso, t).getTime() > margin; });
     if(!options.length) continue;
-    return { date:iso, time: options.indexOf('19:00') > -1 ? '19:00' : options[0] };
+    return { date:iso, time: slotCercano(options, '19:00') };
   }
-  return { date: todayISO(), time:'19:00' };
+  return { date: todayISO(), time: slotCercano(grilla, '19:00') };
+}
+
+/* Los dos modales ofrecen los turnos del club elegido, así que hay que rellenar
+   el selector cada vez que se cambia de club: las grillas no tienen por qué
+   coincidir entre un club y otro. */
+function llenarTurnos(selectId, clubId, preferido){
+  const grilla = slotsOf(clubId);
+  const previo = $(selectId).value;
+  fillSelect($(selectId), grilla.map(function(t){
+    return { value:t, label:t + ' hrs' };
+  }), null, null);
+  $(selectId).value = grilla.indexOf(previo) > -1 ? previo : slotCercano(grilla, preferido || '19:00');
 }
 
 function openModal(id){ $(id).classList.add('open'); }
@@ -3584,10 +3836,11 @@ function openChallenge(targetId){
   const c = club(t.clubId);
   $('chSub').textContent = t.category + (t.rank ? ' · #'+t.rank+' nacional' : '') + (c ? ' · juega en '+c.name : '');
   $('chClub').value = t.clubId;
+  llenarTurnos('chTime', t.clubId);
   challengeCourt = 0;
   // Mantiene la fecha/hora anterior si sigue siendo futura; si no, propone el próximo bloque.
   if(!$('chDate').value || isPast($('chDate').value, $('chTime').value)){
-    const def = defaultSlot();
+    const def = defaultSlot(t.clubId);
     $('chDate').value = def.date;
     $('chTime').value = def.time;
   }
@@ -3948,9 +4201,6 @@ function fillClubSelects(){
   fillSelect($('auClub'), clubOptions(), null, null);
   fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
   fillSelect($('cClub'), clubOptions(), null, null);
-  $('gHoras').innerHTML = SLOTS.map(function(t){
-    return '<option value="h|' + parseInt(t, 10) + '">' + t + ' hrs</option>';
-  }).join('');
   fillSelect($('chClub'), clubOptions(), null, null);
   fillSelect($('ivClub'), clubOptions(), null, null);
   fillSelect($('oClub'), clubOptions(), 'Todos los clubes', 'todos');
@@ -3981,10 +4231,6 @@ function initControls(){
   fillSelect($('auCat'), catOptions(), null, null);
   fillSelect($('oCat'), catOptions(), 'Todas las categorías', 'todas');
   fillSelect($('ivCat'), catOptions(), 'Cualquiera', '');
-  fillSelect($('ivTime'), SLOTS.map(function(t){ return { value:t, label:t + ' hrs' }; }), null, null);
-
-  fillSelect($('chTime'), SLOTS.map(function(t){ return { value:t, label:t + ' hrs' }; }), null, null);
-  $('chTime').value = '19:00';
 
   const t = todayISO(), mx = maxISO();
   ['chDate','cDate','ivDate'].forEach(function(id){
@@ -4061,7 +4307,7 @@ function bindEvents(){
     if(e.key === 'Enter'){ e.preventDefault(); aplicarFiltros(); }
   });
   $('rCat').addEventListener('change', renderRanking);
-  ['clClub','clDate','gPeriodo'].forEach(function(id){
+  ['clClub','clDate','gPeriodo','rpPeriodo'].forEach(function(id){
     $(id).addEventListener('input', function(){ ventanaTop = 3; renderClub(); });
   });
   ['gVentana','gDia','gFinde'].forEach(function(id){
@@ -4100,6 +4346,8 @@ function bindEvents(){
   ['ivClub','ivDate','ivTime'].forEach(function(id){
     $(id).addEventListener('input', updateInviteAvail);
   });
+  $('ivClub').addEventListener('change', function(){ llenarTurnos('ivTime', this.value); });
+  $('chClub').addEventListener('change', function(){ llenarTurnos('chTime', this.value); });
   $('ivCourts').addEventListener('click', function(e){
     const b = e.target.closest('.court-pick');
     if(!b || b.disabled) return;
