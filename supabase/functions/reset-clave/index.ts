@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
 
   const url = env('SUPABASE_URL');
   const anon = env('SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY');
-  const servicio = env('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY');
+  const servicio = env('SM_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY');
 
   if (!url || !anon || !servicio) {
     return json({
@@ -69,12 +69,33 @@ Deno.serve(async (req: Request) => {
   const auth = req.headers.get('Authorization') ?? '';
   if (!auth) return json({ error: 'Falta la sesion.' }, 401);
 
-  let playerId = '';
+  let cuerpo: Record<string, unknown> = {};
   try {
-    playerId = (await req.json())?.player_id ?? '';
+    cuerpo = (await req.json()) ?? {};
   } catch {
     return json({ error: 'Cuerpo invalido.' }, 400);
   }
+
+  /* Modo diagnostico: dice QUE variables encontro y si el cliente de servicio
+     puede leer, sin devolver ningun valor de llave. Nombres y si/no, nada mas.
+     Existe porque "permission denied" no dice con que rol se esta consultando, y
+     adivinarlo cuesta mas que preguntarlo. */
+  if (cuerpo.diagnostico === true) {
+    const nombres = Object.keys(Deno.env.toObject())
+      .filter((k) => k.startsWith('SUPABASE_') || k.startsWith('SM_'))
+      .sort();
+    const prueba = createClient(url, servicio, { auth: { persistSession: false } });
+    const perfiles = await prueba.from('profiles').select('id').limit(1);
+    const clubes = await prueba.from('clubs').select('id').limit(1);
+    return json({
+      variablesEncontradas: nombres,
+      servicioEmpiezaCon: servicio.slice(0, 12),
+      leerProfiles: perfiles.error ? perfiles.error.message : 'ok',
+      leerClubs: clubes.error ? clubes.error.message : 'ok',
+    });
+  }
+
+  const playerId = String(cuerpo.player_id ?? '');
   if (!playerId) return json({ error: 'Falta el jugador.' }, 400);
 
   // Quién llama. Va con el token del usuario, así que no se puede falsear.
