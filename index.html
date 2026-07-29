@@ -4991,7 +4991,11 @@ function showApp(){
 
    Si lo que escriben lleva arroba se usa tal cual: así siguen entrando las
    cuentas viejas y la del club, que se crearon con correo de verdad. */
-const DOMINIO_SOCIO = 'socio.squashmatch.app';
+/* Supabase valida el dominio del correo, asi que no sirve uno inventado: rechaza
+   socio.squashmatch.app por no existir. Se usa squash.cl, que es real y es el
+   mismo que ya usan las cuentas de prueba. Nadie recibe correo aca: el ID de
+   socio es lo unico que el jugador escribe. */
+const DOMINIO_SOCIO = 'squash.cl';
 
 function correoDeAcceso(entrada){
   const v = String(entrada || '').trim().toLowerCase();
