@@ -944,6 +944,59 @@ drop policy if exists player_flags_delete on public.player_flags;
 create policy player_flags_delete on public.player_flags
   for delete to authenticated using (public.is_club_admin(club_id));
 
+-- =============================================================================
+-- AVISOS DEL CLUB
+-- La otra mitad de la lista de llamados: en vez de telefonear, el club le manda
+-- el aviso al jugador dentro de la app. "La cancha 1 a las 17:00 está libre" al
+-- que siempre juega a esa hora.
+--
+-- El aviso lleva el bloque concreto (fecha, hora, cancha) y no solo el texto,
+-- para que al jugador le podamos ofrecer la acción: publicar que juega ahí y
+-- buscar rival. Un aviso que obliga a ir a buscar el horario a mano se pierde.
+--
+-- Reservar la cancha no lo hace el aviso: sigue haciendo falta un rival. Esto
+-- avisa, no agenda.
+-- =============================================================================
+create table if not exists public.club_messages (
+  id         uuid primary key default gen_random_uuid(),
+  club_id    text not null references public.clubs(id) on delete cascade,
+  player_id  uuid not null references public.profiles(id) on delete cascade,
+  body       text not null check (length(btrim(body)) > 0),
+  match_date date,
+  match_time text,
+  court      int  not null default 0,
+  sent_by    uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  read_at    timestamptz
+);
+
+create index if not exists club_messages_player_idx
+  on public.club_messages (player_id, created_at desc);
+
+alter table public.club_messages enable row level security;
+grant select, insert, delete on public.club_messages to authenticated;
+-- El jugador solo puede tocar read_at: darlo por visto, nada más.
+grant update (read_at) on public.club_messages to authenticated;
+
+-- Lo ve el destinatario y quien administra el club que lo mandó.
+drop policy if exists club_messages_read on public.club_messages;
+create policy club_messages_read on public.club_messages
+  for select to authenticated
+  using (player_id = auth.uid() or public.is_club_admin(club_id));
+
+drop policy if exists club_messages_send on public.club_messages;
+create policy club_messages_send on public.club_messages
+  for insert to authenticated with check (public.is_club_admin(club_id));
+
+drop policy if exists club_messages_seen on public.club_messages;
+create policy club_messages_seen on public.club_messages
+  for update to authenticated
+  using (player_id = auth.uid()) with check (player_id = auth.uid());
+
+drop policy if exists club_messages_drop on public.club_messages;
+create policy club_messages_drop on public.club_messages
+  for delete to authenticated using (public.is_club_admin(club_id));
+
 -- Configuración del club: la edita solo quien lo administra. Va por función y
 -- no por un grant de update para que la comprobación viva en el servidor.
 create or replace function public.set_club_config(
@@ -1531,6 +1584,12 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.player_flags;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.club_messages;
 exception when duplicate_object then null;
 end $$;
 

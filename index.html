@@ -1453,6 +1453,46 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
+<!-- ============ MODAL AVISAR ============ -->
+<div class="overlay" id="notifyModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Avisar a <span id="nfName"></span></h2>
+        <p id="nfSub"></p>
+      </div>
+      <button class="x" data-close="notifyModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="two">
+        <div class="field">
+          <label for="nfDate">Fecha</label>
+          <input id="nfDate" type="date">
+          <span class="hint" id="nfDateLabel"></span>
+        </div>
+        <div class="field">
+          <label for="nfTime">Hora</label>
+          <select id="nfTime"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="nfCourt">Cancha</label>
+        <select id="nfCourt"></select>
+      </div>
+      <div class="field">
+        <label for="nfBody">Mensaje</label>
+        <textarea id="nfBody" rows="3" maxlength="240"></textarea>
+        <span class="hint">Se arma solo con lo de arriba. Puedes cambiarlo.</span>
+      </div>
+      <div class="avail" id="nfAvail"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="notifyModal">Cancelar</button>
+      <button class="btn primary" id="nfSend">Enviar aviso</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL NO LLAMAR ============ -->
 <div class="overlay" id="flagModal">
   <div class="modal">
@@ -1600,7 +1640,7 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    modo que todos los jugadores ven lo mismo.
    ========================================================= */
 let state = {
-  clubs:[], players:[], requests:[], bookings:[], invites:[], flags:{},
+  clubs:[], players:[], requests:[], bookings:[], invites:[], flags:{}, avisos:[],
   ratingHistory:[], payments:[], clubAdmins:[], clubNotes:{}, contacts:{},
   meId:null, session:null, adminMode:false
 };
@@ -1701,7 +1741,7 @@ async function fetchProfiles(){
 
 async function fetchAll(){
   const [clubs, profiles, challenges, bookings, invites, ratings,
-         pagos, admins, marcas] = await Promise.all([
+         pagos, admins, marcas, avisos] = await Promise.all([
     sb.from('clubs').select('*').order('name'),
     fetchProfiles(),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
@@ -1710,7 +1750,8 @@ async function fetchAll(){
     sb.from('rating_history').select('*').order('created_at'),
     sb.from('payments').select('*'),
     sb.from('club_admins').select('*'),
-    sb.from('player_flags').select('*')
+    sb.from('player_flags').select('*'),
+    sb.from('club_messages').select('*').order('created_at', { ascending:false })
   ]);
 
   const err = clubs.error || profiles.error || challenges.error || bookings.error;
@@ -1764,6 +1805,19 @@ async function fetchAll(){
         motivo:m.reason, nota:m.note || '',
         desde:m.from_date || '', hasta:m.until_date || ''
       };
+    });
+  }
+
+  /* Avisos del club. El jugador ve los suyos; el club, los que mandó. */
+  state.avisos = [];
+  if(avisos.error){
+    console.warn('Avisos no disponibles:', avisos.error.message);
+  } else {
+    state.avisos = avisos.data.map(function(a){
+      return { id:a.id, clubId:a.club_id, playerId:a.player_id, body:a.body,
+               date:a.match_date || '', time:a.match_time || '', court:a.court || 0,
+               sentBy:a.sent_by, readAt:a.read_at,
+               createdAt:a.created_at ? new Date(a.created_at).getTime() : 0 };
     });
   }
 
@@ -2087,6 +2141,23 @@ function marcaTexto(m){
   return m.titulo +
     (m.hasta ? ' hasta el ' + fmtDate(m.hasta) : '') +
     (m.nota ? ' · ' + m.nota : '');
+}
+
+async function enviarAviso(clubId, playerId, datos){
+  const { error } = await sb.from('club_messages').insert({
+    club_id:clubId, player_id:playerId, body:datos.texto,
+    match_date:datos.date || null, match_time:datos.time || null,
+    court:datos.court || 0, sent_by:state.meId
+  });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+async function marcarAvisoVisto(avisoId){
+  const { error } = await sb.from('club_messages')
+    .update({ read_at:new Date().toISOString() }).eq('id', avisoId);
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
 }
 
 async function guardarMarca(clubId, playerId, datos){
@@ -3270,9 +3341,15 @@ function renderVentana(clubId, dias){
           '<div class="rank-bar"><i style="width:' +
             Math.round(x.partidos / lista[0].partidos * 100) + '%"></i></div>' +
         '</div>' +
-        '<button class="btn sm' + (marca ? ' danger' : '') + '" ' +
-          'data-marcar="' + clubId + '|' + x.id + '">' +
-          (marca ? 'Quitar marca' : 'No llamar') + '</button>' +
+        '<div class="btn-row">' +
+          (marca
+            ? ''
+            : '<button class="btn primary sm" data-avisar="' + clubId + '|' + x.id +
+              '">Avisar</button>') +
+          '<button class="btn sm' + (marca ? ' danger' : '') + '" ' +
+            'data-marcar="' + clubId + '|' + x.id + '">' +
+            (marca ? 'Quitar marca' : 'No llamar') + '</button>' +
+        '</div>' +
       '</div>';
     }).join('') + '</div>' +
     '<div class="btn-row" style="margin-top:14px">' +
@@ -3703,6 +3780,29 @@ function buildNotifications(){
   const mine = me().id;
   const list = [];
 
+  /* Avisos del club: van primero porque son una oferta con fecha de vencimiento
+     —la cancha se la lleva otro— y porque no salen del estado de la app, así que
+     nadie más los va a repetir. */
+  state.avisos.forEach(function(a){
+    if(a.playerId !== mine || a.readAt) return;
+    if(a.date && a.time && isPast(a.date, a.time)) return;
+    const c = club(a.clubId);
+    const cuando = a.date
+      ? fmtDate(a.date) + ' · ' + a.time +
+        (a.court ? ' · cancha ' + a.court : '')
+      : (c ? c.name : '');
+    list.push({
+      tone:'hot', when:a.createdAt,
+      title:(c ? c.name : 'El club') + ' te avisó',
+      sub:a.body + (cuando ? ' — ' + cuando : ''),
+      actions:'<div class="btn-row">' +
+        (a.date
+          ? '<button class="btn primary sm" data-tomaraviso="' + a.id + '">Publicar que juego ahí</button>'
+          : '') +
+        '<button class="btn sm" data-avisovisto="' + a.id + '">Listo</button></div>'
+    });
+  });
+
   requestsLive().forEach(function(r){
     if(r.fromId !== mine && r.toId !== mine) return;
     const other = player(r.fromId === mine ? r.toId : r.fromId);
@@ -3934,18 +4034,27 @@ function updateInviteAvail(){
   $('ivSend').disabled = !check.ok;
 }
 
-function openInviteModal(){
-  inviteCourt = 0;
-  const clubId = me().clubId || (CLUBS[0] && CLUBS[0].id);
+/* pre: bloque que viene de un aviso del club, para no obligar al jugador a
+   volver a tipear la fecha y la hora que le acaban de ofrecer. */
+function openInviteModal(pre){
+  inviteCourt = (pre && pre.court) || 0;
+  const clubId = (pre && pre.clubId) || me().clubId || (CLUBS[0] && CLUBS[0].id);
   $('ivClub').value = clubId;
   llenarTurnos('ivTime', clubId);
   const def = defaultSlot(clubId);
-  $('ivDate').value = def.date;
-  $('ivTime').value = def.time;
+  $('ivDate').value = (pre && pre.date) || def.date;
+  $('ivTime').value = (pre && pre.time) || def.time;
   $('ivCat').value = '';
   $('ivMsg').value = '';
   updateInviteAvail();
   openModal('inviteModal');
+}
+
+function tomarAviso(avisoId){
+  const a = state.avisos.find(function(x){ return x.id === avisoId; });
+  if(!a) return;
+  activateView('abiertas');
+  openInviteModal({ clubId:a.clubId, date:a.date, time:a.time, court:a.court });
 }
 
 /* =========================================================
@@ -4341,6 +4450,67 @@ function openChallenge(targetId){
   $('chMsg').value = '';
   updateAvail();
   openModal('challengeModal');
+}
+
+/* Avisarle a un jugador que hay una cancha libre en el bloque en que suele
+   jugar. Es la otra mitad de la lista de llamados: en vez de telefonear, el
+   aviso le llega dentro de la app con la acción para tomarlo. */
+let avisoActual = null;   // { clubId, playerId }
+
+function openNotify(clubId, playerId, hora){
+  const j = player(playerId);
+  const c = club(clubId);
+  if(!j || !c) return;
+  avisoActual = { clubId:clubId, playerId:playerId };
+
+  $('nfName').textContent = j.name;
+  $('nfSub').textContent = 'Le llega como aviso dentro de la app, con un botón para ' +
+    'publicar que juega en ese bloque y buscar rival.';
+
+  llenarTurnos('nfTime', clubId, hora || '19:00');
+  if(hora){
+    const grilla = slotsOf(clubId);
+    const dentro = grilla.filter(function(t){ return minutosDe(t) >= minutosDe(hora); });
+    $('nfTime').value = dentro.length ? dentro[0] : slotCercano(grilla, hora);
+  }
+
+  fillSelect($('nfCourt'), [{ value:'0', label:'Cualquiera que esté libre' }].concat(
+    Array.from({ length:c.courts }, function(_, i){
+      return { value:String(i + 1), label:'Cancha ' + (i + 1) };
+    })), null, null);
+
+  const def = defaultSlot(clubId);
+  $('nfDate').min = todayISO();
+  $('nfDate').max = maxISO();
+  $('nfDate').value = def.date;
+
+  componerAviso();
+  openModal('notifyModal');
+}
+
+/* El texto se arma solo con la fecha, la hora y la cancha elegidas: escribirlo
+   a mano cada vez es la clase de fricción que hace que la función no se use. */
+function componerAviso(){
+  if(!avisoActual) return;
+  const c = club(avisoActual.clubId);
+  const date = $('nfDate').value, time = $('nfTime').value;
+  const court = parseInt($('nfCourt').value, 10) || 0;
+
+  $('nfDateLabel').textContent = date ? fmtDateLong(date) : '';
+  $('nfBody').value = (court ? 'La cancha ' + court + ' está disponible'
+                             : 'Tenemos cancha disponible') +
+    ' el ' + fmtDate(date) + ' a las ' + time + ' hrs' +
+    (c ? ' en ' + c.name : '') + '.';
+
+  // Si el bloque ya está tomado, avisarlo antes de ofrecerlo.
+  const libre = court
+    ? !bookingsAt(avisoActual.clubId, date, time).some(function(b){ return b.court === court; })
+    : !!freeCourt(avisoActual.clubId, date, time);
+  const box = $('nfAvail');
+  box.className = 'avail ' + (libre ? 'ok' : 'bad');
+  box.textContent = libre
+    ? '✓ Ese bloque está libre ahora mismo.'
+    : '✕ Ese bloque ya está tomado. Puedes avisar igual, pero conviene revisar.';
 }
 
 /* Marcar a un jugador como "no llamar". Es una anotación del club sobre su
@@ -4943,7 +5113,8 @@ function bindEvents(){
       '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
       '[data-rejectinvite],[data-cancelinvite],' +
       '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
-      '[data-vermas],[data-vermenos],[data-marcar]');
+      '[data-vermas],[data-vermenos],[data-marcar],[data-avisar],' +
+      '[data-tomaraviso],[data-avisovisto]');
     if(!el) return;
     const d = el.dataset;
 
@@ -4960,6 +5131,14 @@ function bindEvents(){
       openFlag(partes[0], partes[1]);
       return;
     }
+    if(d.avisar){
+      const partes = d.avisar.split('|');
+      // La hora del bloque que el club está mirando en la ventana de horario.
+      const v = String($('gVentana').value).split('|');
+      openNotify(partes[0], partes[1], v[0] === 'h' ? horaDe(parseInt(v[1], 10) * 60) : '');
+      return;
+    }
+    if(d.tomaraviso){ tomarAviso(d.tomaraviso); return; }
     if(d.result){ openResult(d.result); return; }
 
     // Las que escriben en la base bloquean el boton mientras viajan.
@@ -5033,6 +5212,8 @@ function bindEvents(){
       } else if(d.cancelinvite){
         await cancelInvite(d.cancelinvite);
         toast('Publicación dada de baja.');
+      } else if(d.avisovisto){
+        await marcarAvisoVisto(d.avisovisto);
       } else if(d.confirmresult){
         const res = await confirmResult(d.confirmresult, true);
         toast(res.ok
@@ -5057,6 +5238,25 @@ function bindEvents(){
     challengeCourt = parseInt(b.dataset.court, 10);
     updateAvail();
   });
+  // Avisar
+  ['nfDate','nfTime','nfCourt'].forEach(function(id){
+    $(id).addEventListener('input', componerAviso);
+  });
+  $('nfSend').addEventListener('click', async function(){
+    if(!avisoActual) return;
+    const texto = $('nfBody').value.trim();
+    if(!texto){ toast('Escribe el aviso.', true); return; }
+    this.disabled = true;
+    const res = await enviarAviso(avisoActual.clubId, avisoActual.playerId, {
+      texto:texto, date:$('nfDate').value, time:$('nfTime').value,
+      court:parseInt($('nfCourt').value, 10) || 0
+    });
+    this.disabled = false;
+    if(!res.ok){ toast(res.reason, true); return; }
+    closeModal('notifyModal');
+    toast('Aviso enviado a ' + player(avisoActual.playerId).name + '.');
+  });
+
   // No llamar
   $('flSave').addEventListener('click', async function(){
     if(!marcaActual) return;
