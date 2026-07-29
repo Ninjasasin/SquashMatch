@@ -437,6 +437,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   font-weight:700;
 }
 .rank-item.ausente{opacity:.62}
+.row.atenuada{opacity:.6}
 
 .pay-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
 .pay-line .who{font-size:13px;min-width:140px}
@@ -988,6 +989,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <div class="seg-row">
       <div class="seg" id="clubSeg">
         <button class="seg-btn active" data-cpane="agenda">Agenda del día</button>
+        <button class="seg-btn" data-cpane="jugadores">Jugadores</button>
         <button class="seg-btn" data-cpane="cobros">Por cobrar</button>
         <button class="seg-btn" data-cpane="historial">Pagados</button>
         <button class="seg-btn" data-cpane="turnos">Reporte de turnos</button>
@@ -1013,6 +1015,31 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       </div>
       <p class="section-title" id="clubAgendaTitle"></p>
       <div class="list" id="clubAgenda"></div>
+    </div>
+
+    <div class="pane" id="cpane-jugadores">
+      <div class="box">
+        <p class="section-title">Jugadores</p>
+        <p class="note">Todos los jugadores, para avisarle a uno en particular que hay cancha
+          libre o marcarlo para no llamar. Nada de esto lo ve el jugador: los avisos le
+          llegan, la marca no.</p>
+        <div class="filters" style="grid-template-columns:2fr 1fr">
+          <div class="field">
+            <label for="cjBuscar">Buscar por nombre</label>
+            <input id="cjBuscar" type="search" placeholder="Ej: Juanito" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="cjFiltro">Mostrar</label>
+            <select id="cjFiltro">
+              <option value="club">Los del club</option>
+              <option value="todos">Todos los jugadores</option>
+              <option value="marcados">Solo los marcados</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint" id="cjCuenta"></p>
+      </div>
+      <div class="list" id="cjLista"></div>
     </div>
 
     <div class="pane" id="cpane-cobros">
@@ -2499,7 +2526,10 @@ function renderPlayers(){
       '</div>' +
       (isMe
         ? '<button class="btn block" disabled>Este eres tú</button>'
-        : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
+        : yo.staff
+          // La cuenta del club no juega: acá el directorio es solo consulta.
+          ? ''
+          : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
     '</article>';
   }).join('');
 }
@@ -2830,6 +2860,7 @@ function renderClub(){
     : '<div class="empty">No hay cobros pendientes. Todo al día.</div>';
 
   // --- Pagados ---
+  renderClubPlayers(clubId);
   renderReporte(clubId);
   renderGestion(clubId);
   if(!configSucia) llenarConfigClub(clubId);
@@ -3262,6 +3293,73 @@ function quienJuegaEn(clubId, dias, ventana, dia, incluirFinde){
 
 /* Las marcas ya vencidas se siguen listando, atenuadas: sirve para saber que
    estuvo marcado y decidir si se renueva o se borra. */
+/* El listado completo, que es de donde el club elige a quién avisarle. La lista
+   de la ventana de horario solo trae a los que más juegan en ese bloque: sirve
+   para descubrir a quién ofrecerle, no para buscar a alguien puntual. */
+function renderClubPlayers(clubId){
+  const q = ($('cjBuscar').value || '').trim().toLowerCase();
+  const modo = $('cjFiltro').value;
+
+  // Última vez que jugó en este club, para saber si sigue activo.
+  const ultima = {};
+  state.bookings.forEach(function(b){
+    if(b.clubId !== clubId || b.status !== 'confirmada') return;
+    [b.playerA, b.playerB].forEach(function(id){
+      if(id && (!ultima[id] || b.date > ultima[id])) ultima[id] = b.date;
+    });
+  });
+
+  const lista = jugadores().filter(function(j){
+    if(modo === 'club' && j.clubId !== clubId) return false;
+    if(modo === 'marcados' && !marcaGuardada(clubId, j.id)) return false;
+    if(q && j.name.toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  }).sort(function(a, b){ return a.name.localeCompare(b.name, 'es'); });
+
+  $('cjCuenta').textContent = lista.length +
+    (lista.length === 1 ? ' jugador' : ' jugadores') +
+    (modo === 'club' ? ' con el club como sede habitual' : '');
+
+  if(!lista.length){
+    $('cjLista').innerHTML = '<div class="empty">Ningún jugador con esos filtros.</div>';
+    return;
+  }
+
+  $('cjLista').innerHTML = lista.map(function(j){
+    const marca = marcaDe(clubId, j.id);
+    const guardada = marcaGuardada(clubId, j.id);
+    const cl = club(j.clubId);
+    const dias = ultima[j.id] ? diasDesde(ultima[j.id]) : null;
+    const disp = availabilityText(j);
+
+    return '<div class="row' + (marca ? ' atenuada' : '') + '">' +
+      '<div class="avatar alt">' + esc(initials(j.name)) + '</div>' +
+      '<div class="grow">' +
+        '<div class="row-title">' + esc(j.name) +
+          (j.category ? ' <span class="chip cat">' + esc(j.category) + '</span>' : '') +
+          (marca
+            ? ' <span class="chip away">no llamar · ' + esc(marca.titulo.toLowerCase()) +
+              (marca.hasta ? ' hasta el ' + esc(fmtDate(marca.hasta)) : '') + '</span>'
+            : (guardada ? ' <span class="chip">marca vencida</span>' : '')) + '</div>' +
+        '<div class="row-sub">' + esc(cl ? cl.name : 'sin club') +
+          (dias === null
+            ? ' · nunca ha jugado acá'
+            : ' · última vez ' + (dias === 0 ? 'hoy' : 'hace ' + dias +
+              (dias === 1 ? ' día' : ' días'))) + '</div>' +
+        (marca && marca.nota
+          ? '<div class="row-sub">' + esc(marca.nota) + '</div>'
+          : (disp ? '<div class="row-sub">Puede ' + esc(disp) + '</div>' : '')) +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn primary sm" data-avisar="' + clubId + '|' + j.id + '">Avisar</button>' +
+        '<button class="btn sm' + (guardada ? ' danger' : '') + '" ' +
+          'data-marcar="' + clubId + '|' + j.id + '">' +
+          (guardada ? 'Ver marca' : 'No llamar') + '</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
 function renderMarcados(clubId){
   const todas = state.flags[clubId] || {};
   const ids = Object.keys(todas);
@@ -5032,6 +5130,9 @@ function bindEvents(){
     if(e.key === 'Enter'){ e.preventDefault(); aplicarFiltros(); }
   });
   $('rCat').addEventListener('change', renderRanking);
+  ['cjBuscar','cjFiltro'].forEach(function(id){
+    $(id).addEventListener('input', function(){ renderClubPlayers($('clClub').value); });
+  });
   ['clClub','clDate','gPeriodo','rpPeriodo'].forEach(function(id){
     $(id).addEventListener('input', function(){ ventanaTop = 3; renderClub(); });
   });
