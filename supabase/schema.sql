@@ -78,31 +78,6 @@ create table if not exists public.profiles (
 alter table public.profiles
   add column if not exists staff boolean not null default false;
 
--- Fuera de las canchas: lesión, vacaciones o lo que sea, con la ventana de
--- fechas en que dura. Existe por un problema concreto del club: a un jugador
--- lesionado lo llamaban todos los días para ofrecerle cancha, y el jugador
--- terminaba molesto de repetir lo mismo. Marcarlo acá lo saca de las listas
--- desde las que el club sale a llamar.
---
--- El rango es lo que hace que esto no se pudra: al pasar away_until el jugador
--- vuelve solo, sin que nadie tenga que acordarse de destildarlo.
-alter table public.profiles
-  add column if not exists away_reason text not null default '',
-  add column if not exists away_note   text not null default '',
-  add column if not exists away_from   date,
-  add column if not exists away_until  date;
-
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'profiles_away_reason_chk') then
-    alter table public.profiles add constraint profiles_away_reason_chk
-      check (away_reason in ('', 'lesion', 'vacaciones', 'otro'));
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'profiles_away_range_chk') then
-    alter table public.profiles add constraint profiles_away_range_chk
-      check (away_from is null or away_until is null or away_until >= away_from);
-  end if;
-end $$;
 
 create index if not exists profiles_club_idx on public.profiles (club_id);
 
@@ -275,13 +250,11 @@ revoke select on public.profiles from authenticated;
 grant select (
   id, name, category, national_rank, club_id, hand, comuna,
   playing_since, available_days, preferred_slot, bio, role, created_at,
-  rating, rating_matches, staff,
-  away_reason, away_note, away_from, away_until
+  rating, rating_matches, staff
 ) on public.profiles to authenticated;
 grant update (
   name, category, national_rank, club_id, hand, phone, comuna,
-  playing_since, available_days, preferred_slot, bio,
-  away_reason, away_note, away_from, away_until
+  playing_since, available_days, preferred_slot, bio
 ) on public.profiles to authenticated;
 
 -- Contacto del rival: solo si hay una reserva confirmada entre ambos.
@@ -917,6 +890,60 @@ $$;
 
 grant execute on function public.is_club_admin(text) to authenticated;
 
+-- =============================================================================
+-- NO LLAMAR
+-- Anotación interna del club sobre un jugador: está lesionado, de vacaciones o
+-- lo que sea, y no tiene sentido llamarlo para ofrecerle cancha.
+--
+-- Sale de un problema concreto: a un lesionado lo llamaban todos los días y el
+-- jugador terminaba molesto de repetir lo mismo. Es gestión de reservas, no una
+-- función del jugador: NO le cambia nada al jugador, que puede seguir
+-- agendando, desafiando y siendo desafiado igual que siempre. Lo único que hace
+-- es que a quien está haciendo los llamados le salga la marca.
+--
+-- Por eso vive acá y no en profiles: es del club sobre su operación, y solo la
+-- ve quien administra ese club. La lee la lista desde la que se sale a llamar.
+--
+-- until_date es lo que hace que esto no se pudra: al pasar la fecha la marca
+-- deja de aplicar sola, sin que nadie tenga que acordarse de sacarla.
+-- =============================================================================
+create table if not exists public.player_flags (
+  club_id    text not null references public.clubs(id) on delete cascade,
+  player_id  uuid not null references public.profiles(id) on delete cascade,
+  reason     text not null check (reason in ('lesion','vacaciones','otro')),
+  note       text not null default '',
+  from_date  date,
+  until_date date,
+  marked_by  uuid references public.profiles(id) on delete set null,
+  marked_at  timestamptz not null default now(),
+  primary key (club_id, player_id),
+  constraint player_flags_range_chk
+    check (from_date is null or until_date is null or until_date >= from_date)
+);
+
+alter table public.player_flags enable row level security;
+grant select, insert, update, delete on public.player_flags to authenticated;
+
+-- Solo quien administra el club ve y toca las marcas de ese club. Para el
+-- jugador la tabla no existe: la consulta le devuelve cero filas.
+drop policy if exists player_flags_read on public.player_flags;
+create policy player_flags_read on public.player_flags
+  for select to authenticated using (public.is_club_admin(club_id));
+
+drop policy if exists player_flags_write on public.player_flags;
+create policy player_flags_write on public.player_flags
+  for insert to authenticated with check (public.is_club_admin(club_id));
+
+drop policy if exists player_flags_edit on public.player_flags;
+create policy player_flags_edit on public.player_flags
+  for update to authenticated
+  using (public.is_club_admin(club_id))
+  with check (public.is_club_admin(club_id));
+
+drop policy if exists player_flags_delete on public.player_flags;
+create policy player_flags_delete on public.player_flags
+  for delete to authenticated using (public.is_club_admin(club_id));
+
 -- Configuración del club: la edita solo quien lo administra. Va por función y
 -- no por un grant de update para que la comprobación viva en el servidor.
 create or replace function public.set_club_config(
@@ -1501,6 +1528,12 @@ begin
 exception when duplicate_object then null;
 end $$;
 
+do $$
+begin
+  alter publication supabase_realtime add table public.player_flags;
+exception when duplicate_object then null;
+end $$;
+
 -- =============================================================================
 -- 12. RETIRO DE LA ESCALERILLA
 -- Va al final a propósito: para cuando esto corre, las funciones de más arriba
@@ -1525,6 +1558,13 @@ begin
 end $$;
 
 drop table if exists public.ladder_members;
+
+-- La marca de "no llamar" vivió un rato en profiles, antes de que quedara claro
+-- que es del club y no del jugador.
+alter table public.profiles drop column if exists away_reason;
+alter table public.profiles drop column if exists away_note;
+alter table public.profiles drop column if exists away_from;
+alter table public.profiles drop column if exists away_until;
 
 alter table public.profiles  drop constraint if exists profiles_ladder_unique;
 alter table public.profiles  drop column if exists ladder_pos;

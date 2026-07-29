@@ -973,44 +973,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         </div>
       </div>
 
-      <div class="box">
-        <p class="section-title">Fuera de las canchas</p>
-        <p class="note">Si estás lesionado o de viaje, márcalo acá. Mientras dure, tu ficha
-          lo muestra, nadie te puede desafiar y el club te saca de las listas desde las que
-          ofrece canchas, así no te llaman todos los días. Al pasar la fecha de término
-          vuelves solo.</p>
-
-        <div class="filters" style="grid-template-columns:1fr 1fr">
-          <div class="field">
-            <label for="cfAway">Estado</label>
-            <select id="cfAway">
-              <option value="">Disponible para jugar</option>
-              <option value="lesion">Lesionado</option>
-              <option value="vacaciones">De vacaciones</option>
-              <option value="otro">No disponible &middot; otro motivo</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="cfAwayNote">Detalle (opcional)</label>
-            <input id="cfAwayNote" type="text" maxlength="60" autocomplete="off"
-                   placeholder="Ej: rotura de fibras">
-          </div>
-        </div>
-
-        <div class="filters" style="grid-template-columns:1fr 1fr" id="cfAwayFechas">
-          <div class="field">
-            <label for="cfAwayFrom">Desde</label>
-            <input id="cfAwayFrom" type="date">
-            <span class="hint">En blanco, empieza hoy.</span>
-          </div>
-          <div class="field">
-            <label for="cfAwayUntil">Hasta</label>
-            <input id="cfAwayUntil" type="date">
-            <span class="hint">En blanco, sigue hasta que lo cambies.</span>
-          </div>
-        </div>
-      </div>
-
       <div class="save-bar">
         <span class="hint" id="cfStatus"></span>
         <button class="btn ghost" id="cfReset">Descartar cambios</button>
@@ -1206,6 +1168,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <p class="note">Cuántas reservas hubo en cada bloque. Mientras más encendido, más
           demanda: ahí es donde conviene subir el precio o abrir más canchas.</p>
         <div id="gMapa"></div>
+      </div>
+
+      <div class="box" id="gMarcadosCaja">
+        <p class="section-title">Marcados para no llamar</p>
+        <p class="note">Anotaciones internas del club. Al jugador no le cambia nada: sigue
+          agendando y siendo desafiado igual.</p>
+        <div id="gMarcados"></div>
       </div>
 
       <div class="box">
@@ -1484,6 +1453,49 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
+<!-- ============ MODAL NO LLAMAR ============ -->
+<div class="overlay" id="flagModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>No llamar a <span id="flName"></span></h2>
+        <p>Queda anotado para el club. <b>Al jugador no le cambia nada</b>: sigue
+          agendando y siendo desafiado igual.</p>
+      </div>
+      <button class="x" data-close="flagModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="two">
+        <div class="field">
+          <label for="flReason">Motivo</label>
+          <select id="flReason">
+            <option value="lesion">Lesionado</option>
+            <option value="vacaciones">De vacaciones</option>
+            <option value="otro">Otro motivo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="flUntil">Hasta</label>
+          <input id="flUntil" type="date">
+          <span class="hint">En blanco, hasta que la saquen.</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="flNote">Detalle (opcional)</label>
+        <input id="flNote" type="text" maxlength="80" autocomplete="off"
+               placeholder="Ej: rotura de fibras, vuelve en septiembre">
+      </div>
+      <div class="auth-note">Pasada la fecha de término la marca deja de aplicar sola,
+        sin que nadie tenga que acordarse de sacarla.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="flClear" hidden>Quitar marca</button>
+      <button class="btn ghost" data-close="flagModal">Cancelar</button>
+      <button class="btn primary" id="flSave">Guardar marca</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL NOTICIA ============ -->
 <div class="overlay" id="newsModal">
   <div class="modal">
@@ -1588,7 +1600,7 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    modo que todos los jugadores ven lo mismo.
    ========================================================= */
 let state = {
-  clubs:[], players:[], requests:[], bookings:[], invites:[],
+  clubs:[], players:[], requests:[], bookings:[], invites:[], flags:{},
   ratingHistory:[], payments:[], clubAdmins:[], clubNotes:{}, contacts:{},
   meId:null, session:null, adminMode:false
 };
@@ -1622,10 +1634,6 @@ function mapProfile(row){
     franja:row.preferred_slot || '',
     bio:row.bio || '',
     role:row.role || 'player',
-    awayReason:row.away_reason || '',
-    awayNote:row.away_note || '',
-    awayFrom:row.away_from || '',
-    awayUntil:row.away_until || '',
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
 }
@@ -1675,10 +1683,7 @@ function mapInvite(row){
 /* Las columnas que agrega cada esquema nuevo pueden no existir todavia en la
    base. Se piden de mas a menos y se usa la primera que responde, para que la
    app siga andando aunque el esquema vaya un paso atras. */
-let hayAusencia = false;   // la base ya tiene las columnas de ausencia
-
 const PROFILE_EXTRAS = [
-  ',rating,rating_matches,staff,away_reason,away_note,away_from,away_until',
   ',rating,rating_matches,staff',
   ''
 ];
@@ -1687,7 +1692,7 @@ async function fetchProfiles(){
   let ultima = null;
   for(let i = 0; i < PROFILE_EXTRAS.length; i++){
     const r = await sb.from('profiles').select(PROFILE_COLS + PROFILE_EXTRAS[i]);
-    if(!r.error){ hayAusencia = i === 0; return r; }
+    if(!r.error) return r;
     ultima = r;
     console.warn('Columnas de perfil no disponibles, reintento:', r.error.message);
   }
@@ -1696,7 +1701,7 @@ async function fetchProfiles(){
 
 async function fetchAll(){
   const [clubs, profiles, challenges, bookings, invites, ratings,
-         pagos, admins] = await Promise.all([
+         pagos, admins, marcas] = await Promise.all([
     sb.from('clubs').select('*').order('name'),
     fetchProfiles(),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
@@ -1704,7 +1709,8 @@ async function fetchAll(){
     sb.from('open_invites').select('*').order('match_date'),
     sb.from('rating_history').select('*').order('created_at'),
     sb.from('payments').select('*'),
-    sb.from('club_admins').select('*')
+    sb.from('club_admins').select('*'),
+    sb.from('player_flags').select('*')
   ]);
 
   const err = clubs.error || profiles.error || challenges.error || bookings.error;
@@ -1744,6 +1750,22 @@ async function fetchAll(){
     : [];
   statsCache = null;   // los memos se rehacen con los datos nuevos
   deltaCache = null;
+
+  /* Marcas de "no llamar", por club y jugador. Para un jugador esta consulta
+     devuelve cero filas: la política de la tabla solo deja ver las del club que
+     uno administra. */
+  state.flags = {};
+  if(marcas.error){
+    console.warn('Marcas no disponibles:', marcas.error.message);
+  } else {
+    marcas.data.forEach(function(m){
+      if(!state.flags[m.club_id]) state.flags[m.club_id] = {};
+      state.flags[m.club_id][m.player_id] = {
+        motivo:m.reason, nota:m.note || '',
+        desde:m.from_date || '', hasta:m.until_date || ''
+      };
+    });
+  }
 
   // Si el esquema de canchas abiertas todavia no se corrio, la app sigue andando.
   if(invites.error){
@@ -2033,31 +2055,56 @@ function statsOf(playerId){
    La ventana es lo que hace que esto no se pudra: al pasar la fecha de término
    el jugador vuelve solo, sin que nadie tenga que acordarse de destildarlo.
    ========================================================= */
-const MOTIVOS_AUSENCIA = {
+const MOTIVOS_MARCA = {
   lesion:     'Lesionado',
   vacaciones: 'De vacaciones',
   otro:       'No disponible'
 };
 
-/** Ausencia vigente hoy, o null si el jugador está disponible. */
-function ausenciaDe(p){
-  if(!p || !p.awayReason) return null;
+/** Marca vigente hoy para ese jugador en ese club, o null. */
+function marcaDe(clubId, playerId){
+  const m = (state.flags[clubId] || {})[playerId];
+  if(!m) return null;
   const hoy = todayISO();
-  if(p.awayFrom  && hoy < p.awayFrom)  return null;   // todavía no empieza
-  if(p.awayUntil && hoy > p.awayUntil) return null;   // ya terminó
+  if(m.desde && hoy < m.desde) return null;   // todavía no empieza
+  if(m.hasta && hoy > m.hasta) return null;   // ya venció
   return {
-    motivo:p.awayReason,
-    titulo:MOTIVOS_AUSENCIA[p.awayReason] || 'No disponible',
-    nota:p.awayNote || '',
-    hasta:p.awayUntil || ''
+    motivo:m.motivo,
+    titulo:MOTIVOS_MARCA[m.motivo] || 'No disponible',
+    nota:m.nota,
+    desde:m.desde,
+    hasta:m.hasta
   };
 }
 
+/** Marca guardada, esté vigente o no. Para poder editarla o sacarla. */
+function marcaGuardada(clubId, playerId){
+  return (state.flags[clubId] || {})[playerId] || null;
+}
+
 /** Una línea con el motivo y hasta cuándo, para mostrar junto al nombre. */
-function ausenciaTexto(a){
-  return a.titulo +
-    (a.hasta ? ' hasta el ' + fmtDate(a.hasta) : '') +
-    (a.nota ? ' · ' + a.nota : '');
+function marcaTexto(m){
+  return m.titulo +
+    (m.hasta ? ' hasta el ' + fmtDate(m.hasta) : '') +
+    (m.nota ? ' · ' + m.nota : '');
+}
+
+async function guardarMarca(clubId, playerId, datos){
+  const { error } = await sb.from('player_flags').upsert({
+    club_id:clubId, player_id:playerId,
+    reason:datos.motivo, note:datos.nota,
+    from_date:datos.desde || null, until_date:datos.hasta || null,
+    marked_by:state.meId, marked_at:new Date().toISOString()
+  }, { onConflict:'club_id,player_id' });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+async function borrarMarca(clubId, playerId){
+  const { error } = await sb.from('player_flags').delete()
+    .eq('club_id', clubId).eq('player_id', playerId);
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
 }
 
 /* =========================================================
@@ -2068,13 +2115,6 @@ function ausenciaTexto(a){
    accept_challenge() antes de reservar. */
 async function sendRequest(toId, clubId, date, time, msg, court){
   const fromId = me().id;
-
-  const rival = player(toId);
-  const aus = ausenciaDe(rival);
-  if(aus){
-    return { ok:false, reason:(rival.name.split(' ')[0]) + ' está fuera de las canchas: ' +
-             ausenciaTexto(aus).toLowerCase() + '.' };
-  }
 
   const check = checkSlot(clubId, date, time, fromId, toId, court);
   if(!check.ok) return { ok:false, reason:check.reason };
@@ -2362,7 +2402,6 @@ function renderPlayers(){
     const c = club(p.clubId);
     const st = statsOf(p.id);
     const isMe = p.id === yo.id;
-    const aus = ausenciaDe(p);
     const pend = requestsLive().some(function(r){
       return r.status === 'pendiente' &&
         ((r.fromId === yo.id && r.toId === p.id) || (r.fromId === p.id && r.toId === yo.id));
@@ -2380,9 +2419,7 @@ function renderPlayers(){
       '<div class="chips">' +
         '<span class="chip cat">'+esc(p.category)+'</span>' +
         '<span class="chip">'+esc(p.hand||'Diestro')+'</span>' +
-        (aus
-          ? '<span class="chip away">'+esc(ausenciaTexto(aus))+'</span>'
-          : (availabilityText(p) ? '<span class="chip">'+esc(availabilityText(p))+'</span>' : '')) +
+        (availabilityText(p) ? '<span class="chip">'+esc(availabilityText(p))+'</span>' : '') +
       '</div>' +
       '<div class="stats">' +
         '<span>PJ <b>'+st.played+'</b></span>' +
@@ -2391,9 +2428,7 @@ function renderPlayers(){
       '</div>' +
       (isMe
         ? '<button class="btn block" disabled>Este eres tú</button>'
-        : aus
-          ? '<button class="btn block" disabled>'+esc(aus.titulo)+'</button>'
-          : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
+        : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
     '</article>';
   }).join('');
 }
@@ -3154,6 +3189,37 @@ function quienJuegaEn(clubId, dias, ventana, dia, incluirFinde){
     });
 }
 
+/* Las marcas ya vencidas se siguen listando, atenuadas: sirve para saber que
+   estuvo marcado y decidir si se renueva o se borra. */
+function renderMarcados(clubId){
+  const todas = state.flags[clubId] || {};
+  const ids = Object.keys(todas);
+
+  if(!ids.length){
+    $('gMarcadosCaja').hidden = true;
+    return;
+  }
+  $('gMarcadosCaja').hidden = false;
+
+  $('gMarcados').innerHTML = '<div class="rank-list">' + ids.map(function(id){
+    const j = player(id);
+    const vig = marcaDe(clubId, id);
+    const g = todas[id];
+    return '<div class="rank-item' + (vig ? '' : ' ausente') + '">' +
+      '<div class="avatar alt">' + esc(initials(j ? j.name : '?')) + '</div>' +
+      '<div class="grow">' +
+        '<div>' + esc(j ? j.name : 'Jugador') +
+          (vig ? ' <span class="chip away">' + esc(vig.titulo.toLowerCase()) + '</span>'
+               : ' <span class="chip">vencida</span>') + '</div>' +
+        '<small>' +
+          (g.hasta ? 'Hasta el ' + esc(fmtDate(g.hasta)) : 'Sin fecha de término') +
+          (g.nota ? ' · ' + esc(g.nota) : '') + '</small>' +
+      '</div>' +
+      '<button class="btn sm" data-marcar="' + clubId + '|' + id + '">Editar</button>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
 function renderVentana(clubId, dias){
   const ventana = $('gVentana').value;
   const dia = $('gDia').value;
@@ -3185,25 +3251,28 @@ function renderVentana(clubId, dias){
     '<div class="rank-list">' + visibles.map(function(x, i){
       const j = player(x.id);
       const disp = j ? availabilityText(j) : '';
-      const aus = ausenciaDe(j);
+      const marca = marcaDe(clubId, x.id);
       const dias_ = x.ultima ? diasDesde(x.ultima) : null;
-      return '<div class="rank-item' + (aus ? ' ausente' : '') + '">' +
+      return '<div class="rank-item' + (marca ? ' ausente' : '') + '">' +
         '<div class="avatar' + (i === 0 ? '' : ' alt') + '">' +
           esc(initials(j ? j.name : '?')) + '</div>' +
         '<div class="grow">' +
           '<div>' + esc(j ? j.name : 'Jugador') +
             (j && j.category ? ' <span class="chip cat">' + esc(j.category) + '</span>' : '') +
-            (aus ? ' <span class="chip away">no llamar · ' + esc(aus.titulo.toLowerCase()) +
-                   (aus.hasta ? ' hasta el ' + esc(fmtDate(aus.hasta)) : '') + '</span>' : '') + '</div>' +
+            (marca ? ' <span class="chip away">no llamar · ' + esc(marca.titulo.toLowerCase()) +
+                   (marca.hasta ? ' hasta el ' + esc(fmtDate(marca.hasta)) : '') + '</span>' : '') + '</div>' +
           '<small>' + x.partidos + (x.partidos === 1 ? ' partido' : ' partidos') +
             ' en este horario' +
             (dias_ === null ? '' : ' · última vez ' + (dias_ === 0 ? 'hoy' : 'hace ' + dias_ +
               (dias_ === 1 ? ' día' : ' días'))) +
-            (aus ? (aus.nota ? ' · ' + esc(aus.nota) : '')
-                 : (disp ? ' · puede ' + esc(disp) : '')) + '</small>' +
+            (marca && marca.nota ? ' · ' + esc(marca.nota)
+                                 : (disp ? ' · puede ' + esc(disp) : '')) + '</small>' +
           '<div class="rank-bar"><i style="width:' +
             Math.round(x.partidos / lista[0].partidos * 100) + '%"></i></div>' +
         '</div>' +
+        '<button class="btn sm' + (marca ? ' danger' : '') + '" ' +
+          'data-marcar="' + clubId + '|' + x.id + '">' +
+          (marca ? 'Quitar marca' : 'No llamar') + '</button>' +
       '</div>';
     }).join('') + '</div>' +
     '<div class="btn-row" style="margin-top:14px">' +
@@ -3279,6 +3348,7 @@ function renderGestion(clubId){
     '</tr></thead><tbody>' + filas + '</tbody></table></div>' +
     (maximo ? '' : '<div class="empty" style="margin-top:12px">Sin reservas en el período.</div>');
 
+  renderMarcados(clubId);
   renderVentana(clubId, dias);
 
   // --- Uso por cancha ---
@@ -4006,8 +4076,7 @@ function renderHero(p, s){
     '<span class="chip">'+esc(p.hand||'Diestro')+'</span>',
     prof.comuna ? '<span class="chip">'+esc(prof.comuna)+'</span>' : '',
     prof.since ? '<span class="chip">Juega desde '+esc(prof.since)+'</span>' : '',
-    disp ? '<span class="chip">'+esc(disp)+'</span>' : '',
-    ausenciaDe(p) ? '<span class="chip away">'+esc(ausenciaTexto(ausenciaDe(p)))+'</span>' : ''
+    disp ? '<span class="chip">'+esc(disp)+'</span>' : ''
   ].join('');
 
   $('profileHero').innerHTML = '' +
@@ -4166,22 +4235,9 @@ function fillConfig(p){
   });
   $('cfBioCount').textContent = prof.bio.length;
 
-  $('cfAway').closest('.box').hidden = !hayAusencia;
-  $('cfAway').value      = p.awayReason || '';
-  $('cfAwayNote').value  = p.awayNote || '';
-  $('cfAwayFrom').value  = p.awayFrom || '';
-  $('cfAwayUntil').value = p.awayUntil || '';
-  sincronizarAusencia();
-
   setDirty(false);
 }
 
-/* Los campos de fecha y detalle no tienen sentido si el jugador está disponible. */
-function sincronizarAusencia(){
-  const fuera = !!$('cfAway').value;
-  $('cfAwayFechas').hidden = !fuera;
-  $('cfAwayNote').closest('.field').hidden = !fuera;
-}
 
 async function saveConfig(){
   const p = me();
@@ -4192,14 +4248,6 @@ async function saveConfig(){
   const thisYear = new Date().getFullYear();
   if($('cfSince').value !== '' && (!isFinite(since) || since < 1950 || since > thisYear)){
     toast('El año debe estar entre 1950 y ' + thisYear + '.', true); $('cfSince').focus(); return;
-  }
-
-  const motivo = $('cfAway').value;
-  const desde  = motivo ? $('cfAwayFrom').value  : '';
-  const hasta  = motivo ? $('cfAwayUntil').value : '';
-  if(desde && hasta && hasta < desde){
-    toast('La fecha de término no puede ser anterior a la de inicio.', true);
-    $('cfAwayUntil').focus(); return;
   }
 
   $('cfSave').disabled = true;
@@ -4217,12 +4265,6 @@ async function saveConfig(){
     available_days:Array.prototype.slice.call(document.querySelectorAll('#cfDays input:checked'))
       .map(function(i){ return i.value; })
   };
-  if(hayAusencia){
-    datos.away_reason = motivo;
-    datos.away_note   = motivo ? $('cfAwayNote').value.trim() : '';
-    datos.away_from   = desde || null;
-    datos.away_until  = hasta || null;
-  }
 
   const { error } = await sb.from('profiles').update(datos).eq('id', p.id);
   $('cfSave').disabled = false;
@@ -4299,6 +4341,25 @@ function openChallenge(targetId){
   $('chMsg').value = '';
   updateAvail();
   openModal('challengeModal');
+}
+
+/* Marcar a un jugador como "no llamar". Es una anotación del club sobre su
+   propia operación: al jugador no le llega nada ni le cambia nada. */
+let marcaActual = null;   // { clubId, playerId }
+
+function openFlag(clubId, playerId){
+  const j = player(playerId);
+  const guardada = marcaGuardada(clubId, playerId);
+  marcaActual = { clubId:clubId, playerId:playerId };
+
+  $('flName').textContent = j ? j.name : 'este jugador';
+  $('flReason').value = guardada ? guardada.motivo : 'lesion';
+  $('flNote').value   = guardada ? guardada.nota : '';
+  $('flUntil').value  = guardada ? guardada.hasta : '';
+  $('flUntil').min    = todayISO();
+  $('flClear').hidden = !guardada;
+  $('flSave').textContent = guardada ? 'Actualizar marca' : 'Guardar marca';
+  openModal('flagModal');
 }
 
 /** Responder un desafío con otro horario, sin rechazarlo. */
@@ -4789,7 +4850,6 @@ function bindEvents(){
   });
 
   $('cfSave').addEventListener('click', saveConfig);
-  $('cfAway').addEventListener('change', sincronizarAusencia);
   $('cfReset').addEventListener('click', function(){
     fillConfig(me());
     toast('Cambios descartados.');
@@ -4883,7 +4943,7 @@ function bindEvents(){
       '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
       '[data-rejectinvite],[data-cancelinvite],' +
       '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
-      '[data-vermas],[data-vermenos]');
+      '[data-vermas],[data-vermenos],[data-marcar]');
     if(!el) return;
     const d = el.dataset;
 
@@ -4895,6 +4955,11 @@ function bindEvents(){
     }
     if(d.challenge){ openChallenge(d.challenge); return; }
     if(d.counter){ openCounter(d.counter); return; }
+    if(d.marcar){
+      const partes = d.marcar.split('|');
+      openFlag(partes[0], partes[1]);
+      return;
+    }
     if(d.result){ openResult(d.result); return; }
 
     // Las que escriben en la base bloquean el boton mientras viajan.
@@ -4992,6 +5057,32 @@ function bindEvents(){
     challengeCourt = parseInt(b.dataset.court, 10);
     updateAvail();
   });
+  // No llamar
+  $('flSave').addEventListener('click', async function(){
+    if(!marcaActual) return;
+    this.disabled = true;
+    const res = await guardarMarca(marcaActual.clubId, marcaActual.playerId, {
+      motivo:$('flReason').value,
+      nota:$('flNote').value.trim(),
+      desde:'',
+      hasta:$('flUntil').value
+    });
+    this.disabled = false;
+    if(!res.ok){ toast(res.reason, true); return; }
+    closeModal('flagModal');
+    toast('Anotado. No aparecerá para llamar mientras dure la marca.');
+  });
+
+  $('flClear').addEventListener('click', async function(){
+    if(!marcaActual) return;
+    this.disabled = true;
+    const res = await borrarMarca(marcaActual.clubId, marcaActual.playerId);
+    this.disabled = false;
+    if(!res.ok){ toast(res.reason, true); return; }
+    closeModal('flagModal');
+    toast('Marca quitada. Vuelve a la lista de llamados.');
+  });
+
   $('chSend').addEventListener('click', async function(){
     this.disabled = true;
     const res = counterReqId
