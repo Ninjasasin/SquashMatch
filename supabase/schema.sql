@@ -1793,7 +1793,17 @@ end $$;
 -- OJO: esto borra de forma definitiva quién estaba inscrito y en qué puesto.
 -- Los partidos, los ratings, las reservas y los cobros no se tocan.
 -- =============================================================================
-drop trigger if exists ladder_close_gap on public.ladder_members;
+-- El "if exists" del drop trigger cubre el trigger, no la tabla: si ladder_members
+-- ya se borro en una corrida anterior, esta linea suelta relation does not exist
+-- y voltea toda la transaccion. Por eso va preguntando primero por la tabla.
+do $$
+begin
+  if exists (select 1 from pg_tables
+              where schemaname = 'public' and tablename = 'ladder_members') then
+    execute 'drop trigger if exists ladder_close_gap on public.ladder_members';
+  end if;
+end $$;
+
 drop function if exists public.close_ladder_gap();
 drop function if exists public.join_ladder(text);
 drop function if exists public.leave_ladder(text);
