@@ -19,7 +19,7 @@ archivo con doble clic ya no sirve.
     valida en el servidor; nunca se guarda en el navegador.
   - Al entrar por primera vez, la cuenta llega con nombre y correo pero sin categoría ni
     club: la app pide esos dos datos antes de dejar pasar, y con eso el jugador entra al
-    último puesto de la escalerilla de su club.
+    directorio y al ranking.
   - La sesión sobrevive a recargas y se cierra desde el botón *Salir*.
 - **Administración del club** — un rol aparte del administrador de la app, amarrado a un
   club y no a la persona: alguien puede administrar un club y jugar en otro. Su trabajo es
@@ -58,7 +58,7 @@ archivo con doble clic ya no sirve.
     cobrar a esa fecha. Es el respaldo del club: el plan gratis de Supabase **no hace
     copias de seguridad** —empiezan en el plan pagado— así que la cobranza no puede vivir
     en un solo lugar. El archivo se genera en el navegador y lleva la fecha en el nombre.
-  - La cuenta del club no juega: no aparece en el directorio, la escalerilla ni el ranking,
+  - La cuenta del club no juega: no aparece en el directorio ni en el ranking,
     y solo ve las secciones que le sirven —*Mi club* es su portada y va primero, en el lugar
     que para los jugadores ocupa *Inicio*. *Canchas abiertas* la conserva como consulta,
     para ver quién está buscando rival, pero sin publicar ni sumarse.
@@ -91,8 +91,6 @@ archivo con doble clic ya no sirve.
   se crea la reserva.
   - **Publicar no toma la cancha**: se reserva recién al confirmar, así que la cancha se
     la lleva la primera pareja que confirma, venga de un desafío o de una publicación.
-  - **No corren por la escalerilla**, para poder jugar contra alguien de tu rango sin
-    arriesgar el puesto. La escalerilla se desafía solo desde su propia sección.
   - La categoría es una preferencia que se muestra y sirve para filtrar, no un muro:
     cualquiera se puede sumar.
 - **Desafíos con elección de cancha** — eliges club, fecha, hora y cancha. El selector
@@ -110,28 +108,14 @@ archivo con doble clic ya no sirve.
 - **Clubes y canchas** — dos clubes (Club Sirio y Santiago Squash) con dos canchas cada
   uno, Cancha 1 y Cancha 2. La grilla de canchas muestra el estado de cada una hora por
   hora, con quién juega en la que está ocupada, y oculta los bloques ya pasados.
-- **Escalerilla** — ranking interno de cada club, con todos sus jugadores del 1 al N:
-  - Cada jugador puede desafiar hasta **3 puestos hacia arriba** y ser desafiado por los
-    3 de abajo. El botón *Desafiar* solo aparece en esos tres rivales; el resto queda sin
-    acción, así no se puede desafiar fuera de rango.
-  - Si gana el desafiante, **intercambian posiciones**; si gana el defensor, la
-    escalerilla no se mueve. El movimiento se aplica cuando el rival confirma el
-    resultado, no cuando se carga.
-  - El partido se agenda y se reserva como cualquier otro, fijado al club de esa
-    escalerilla, y queda marcado como válido por ella.
-  - Si las posiciones cambian entre el envío y la respuesta y el desafío queda fuera de
-    rango, caduca indicando el motivo.
-  - **La inscripción es explícita y no depende del club del perfil**: hay botones para
-    unirse y para salir, se entra al último puesto, y un jugador puede estar en varias
-    escalerillas a la vez. Al salir, los de abajo suben un lugar.
 - **Mis partidos** — próximos partidos con club y cancha, cancelación que libera el
   cupo, e historial con el marcador.
 - **Resultados en dos pasos** — uno de los dos jugadores carga quién ganó y el marcador
   **en sets** (3-0, 3-1, 3-2, o 2-0 y 2-1 al mejor de 3; no se piden los parciales de
   cada game, que nadie recuerda). El partido queda *por confirmar* y el rival recibe el
   aviso con dos botones: confirmar o rechazar. Quien cargó el resultado no puede
-  confirmarlo, y hasta que el otro lo acepte no cuenta para las estadísticas ni mueve la
-  escalerilla. Si lo rechazan, vuelve a quedar disponible para cargarlo de nuevo. El
+  confirmarlo, y hasta que el otro lo acepte no cuenta para las estadísticas ni mueve el
+  ranking. Si lo rechazan, vuelve a quedar disponible para cargarlo de nuevo. El
   marcador siempre se muestra desde quien mira: una derrota se ve 1-3, no 3-1.
 - **Mi perfil** — panel con el resumen del jugador, sus estadísticas y la edición de
   sus datos:
@@ -178,13 +162,11 @@ Lo que corre en el navegador:
   vuelve a leer después de cada acción.
 - `checkSlot()` / `courtFree()` validan la disponibilidad para la interfaz: avisan
   temprano y evitan viajes inútiles. La decisión real la toma el servidor.
-- `ladderTargets()` / `canChallengeLadder()` resuelven a quién se puede desafiar;
-  las posiciones vienen de la columna `ladder_pos`.
 
 Lo que corre en el servidor, porque es donde se puede garantizar:
 
-- `accept_challenge()` revalida horario, disponibilidad de ambos jugadores, rango de
-  escalerilla y cancha, y crea la reserva en una sola transacción. Un índice único
+- `accept_challenge()` revalida horario, disponibilidad de ambos jugadores y cancha,
+  y crea la reserva en una sola transacción. Un índice único
   sobre club, fecha, hora y cancha impide la doble reserva aunque dos personas
   acepten en el mismo segundo.
 - `join_invite()` deja a un jugador postulando a una publicación, y `confirm_invite()`
@@ -194,11 +176,9 @@ Lo que corre en el servidor, porque es donde se puede garantizar:
 - `apply_elo()` mueve el rating de ambos jugadores, y corre dentro de `confirm_result()`:
   el rating solo cambia con resultados confirmados por los dos, nunca desde el navegador.
   `recalc_ratings()` rehace todos los ratings desde cero en orden cronológico.
-- `join_ladder()` / `leave_ladder()` inscriben o retiran al jugador de la escalerilla de un
-  club; puede estar en varias a la vez.
 - `report_result()` recibe el resultado de cualquiera de los dos jugadores y lo deja
-  *por confirmar*; `confirm_result()` solo puede ejecutarla el rival, y es la que aplica
-  el intercambio de posiciones de la escalerilla.
+  *por confirmar*; `confirm_result()` solo puede ejecutarla el rival, y es la que dispara
+  el movimiento del rating.
 - `contact_of()` entrega correo y teléfono únicamente a quien tenga una reserva
   confirmada con esa persona; el directorio no los expone.
 - `club_book()` / `set_club_note()` / `club_cancel()` dejan que el club reserve para
@@ -253,8 +233,8 @@ Sobre el rendimiento, tres decisiones que conviene conocer antes de tocar el có
   contadores de las pestañas se calculan aparte, porque deben estar al día aunque el
   jugador esté mirando otra sección.
 
-Las cinco tablas están en la publicación `supabase_realtime`, así que los desafíos, las
-reservas y los cambios de escalerilla llegan solos a las pantallas abiertas, sin recargar.
+Las tablas están en la publicación `supabase_realtime`, así que los desafíos, las
+reservas y los cambios de rating llegan solos a las pantallas abiertas, sin recargar.
 
 La app necesita estar publicada (Vercel) para funcionar: carga la librería de
 Supabase y el acceso con Google exige un dominio autorizado.
@@ -282,8 +262,23 @@ Y para dejar la base presentable después de trabajar en ella,
 [`supabase/limpiar-pruebas.sql`](supabase/limpiar-pruebas.sql) borra lo que dejan las
 verificaciones —desafíos y publicaciones con textos de prueba, reservas canceladas que solo
 existieron para comprobar la cancelación, restos en las biografías— sin tocar jugadores,
-partidos, ratings, escalerillas ni cobros reales. La app no permite eliminar filas, solo
-cancelarlas, así que este aseo va por SQL a propósito.
+partidos, ratings ni cobros reales. La app no permite eliminar filas, solo cancelarlas,
+así que este aseo va por SQL a propósito.
+
+## La escalerilla se retiró
+
+Existió hasta julio de 2026: un ranking interno por club donde cada uno desafiaba hasta
+tres puestos arriba y el ganador se quedaba con el lugar del otro. Se sacó porque el
+ranking por puntos ya cumple esa función y hacerlo dos veces confundía —un mismo partido
+movía dos marcadores distintos, con reglas distintas.
+
+Si alguna vez se retoma, esto es lo que había que resolver y ya estaba resuelto: la
+membresía tenía que ser explícita (unirse y salir por botón) y no depender del club del
+perfil, porque hay gente que juega en más de un club; al salir alguien, los de abajo
+suben un lugar, lo que obliga a que la restricción de puesto único sea `deferrable`; y
+el rango se revalida al aceptar el desafío, no solo al enviarlo, porque las posiciones
+se mueven entre una cosa y la otra. La versión que se retiró está en el historial de
+git, en el commit anterior a este.
 
 ## Limitaciones actuales
 

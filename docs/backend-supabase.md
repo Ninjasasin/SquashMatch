@@ -12,7 +12,7 @@ navegador. Con Supabase pasan a vivir en una base de datos compartida: dos
 jugadores en celulares distintos se ven, se desafían y la reserva bloquea la
 cancha para ambos. Además el acceso con Google pasa a ser real.
 
-Lo que **no** cambia: la interfaz, la lógica de escalerilla, las estadísticas y
+Lo que **no** cambia: la interfaz, el ranking, las estadísticas y
 el flujo de desafíos. Se reescribe la capa de datos, no la app.
 
 ---
@@ -116,7 +116,7 @@ Vale la pena que sepas qué quedó protegido, porque no es lo mismo que hoy:
 
 - **Nadie puede reservar saltándose las reglas.** Aceptar un desafío no es una
   escritura directa: pasa por una función en el servidor que revalida el horario, que
-  ninguno de los dos tenga otro partido, el rango de la escalerilla y la
+  ninguno de los dos tenga otro partido y la
   disponibilidad de la cancha. Además hay un índice único que impide dos reservas
   confirmadas en la misma cancha, fecha y hora, aunque dos personas acepten en el
   mismo segundo.
@@ -125,8 +125,8 @@ Vale la pena que sepas qué quedó protegido, porque no es lo mismo que hoy:
   obtienen con una función que los devuelve únicamente a quien tenga una reserva
   confirmada con esa persona.
 - **El resultado de un partido solo lo pueden registrar sus dos jugadores**, y el
-  movimiento de la escalerilla lo aplica el servidor, no el navegador.
+  el movimiento del rating lo aplica el servidor, no el navegador.
 
 Lo que **no** está resuelto y conviene decidir más adelante: que alguien registre un
 resultado falso. Hoy basta con que uno de los dos lo cargue. Lo natural es pedir
-confirmación del rival antes de mover la escalerilla.
+confirmación del rival antes de mover el rating.

@@ -6,8 +6,8 @@
 -- prueba y reservas canceladas que solo existían para comprobar que la
 -- cancelación funcionaba.
 --
--- NO toca a los jugadores, sus partidos jugados, los ratings, las escalerillas
--- ni los cobros reales. Es seguro correrlo las veces que haga falta.
+-- NO toca a los jugadores, sus partidos jugados, los ratings ni los cobros
+-- reales. Es seguro correrlo las veces que haga falta.
 --
 -- Ejecutar en el SQL Editor de Supabase. No requiere desplegar nada.
 -- =============================================================================

@@ -4,7 +4,7 @@
 -- Ejecutar DESPUÉS de schema.sql, en el SQL Editor de Supabase.
 --
 -- Crea 12 cuentas de prueba con perfil, club, categoría y un historial de
--- partidos ya confirmados, para que el directorio, la escalerilla y las
+-- partidos ya confirmados, para que el directorio, el ranking y las
 -- estadísticas se vean vivos al mostrar la app.
 --
 --   Jugadores:    nombre@squash.cl   (camila@squash.cl, rodrigo@squash.cl, …)
@@ -83,9 +83,7 @@ where u.email like '%@squash.cl'
 -- -----------------------------------------------------------------------------
 -- 2. Perfiles
 -- El trigger handle_new_user() ya creó la fila con nombre y correo; acá se
--- completan categoría, ranking y club. Al asignar el club, el trigger
--- place_in_ladder() ubica a cada uno al final de la escalerilla, así que el
--- orden de esta lista es el orden inicial de cada escalerilla.
+-- completan categoría, ranking y club.
 -- -----------------------------------------------------------------------------
 update public.profiles p
    set category      = d.categoria,
@@ -111,31 +109,8 @@ from (values
 where p.email = d.correo;
 
 -- -----------------------------------------------------------------------------
--- 2b. Inscripción en la escalerilla de su club
--- La membresía es explícita: el orden de esta lista es el orden inicial.
--- -----------------------------------------------------------------------------
-insert into public.ladder_members (club_id, player_id, position)
-select d.club, p.id, row_number() over (partition by d.club order by d.orden)
-  from (values
-    ('cristobal@squash.cl', 'c2', 1),
-    ('matias@squash.cl',    'c2', 2),
-    ('felipe@squash.cl',    'c2', 3),
-    ('tomas@squash.cl',     'c2', 4),
-    ('pablo@squash.cl',     'c2', 5),
-    ('rodrigo@squash.cl',   'c1', 1),
-    ('sebastian@squash.cl', 'c1', 2),
-    ('joaquin@squash.cl',   'c1', 3),
-    ('camila@squash.cl',    'c1', 4),
-    ('fernanda@squash.cl',  'c1', 5),
-    ('valentina@squash.cl', 'c1', 6),
-    ('jorge@squash.cl',     'c1', 7)
-  ) as d(correo, club, orden)
-  join public.profiles p on p.email = d.correo
-on conflict (club_id, player_id) do nothing;
-
--- -----------------------------------------------------------------------------
--- 2c. Cuenta de administración del Club Sirio
--- No es un jugador: no aparece en el directorio, la escalerilla ni el ranking.
+-- 2b. Cuenta de administración del Club Sirio
+-- No es un jugador: no aparece en el directorio ni en el ranking.
 --   Correo: clubsirio@squash.cl   ·   Contraseña: admin2026
 -- -----------------------------------------------------------------------------
 insert into auth.users (
@@ -173,21 +148,17 @@ insert into public.club_admins (club_id, player_id)
 select 'c1', id from public.profiles where email = 'clubsirio@squash.cl'
 on conflict do nothing;
 
--- La cuenta de administración no compite: fuera de la escalerilla.
-delete from public.ladder_members
- where player_id in (select id from public.profiles where staff);
-
 -- -----------------------------------------------------------------------------
 -- 3. Partidos jugados, todos con resultado ya confirmado
 -- Las fechas son distintas entre sí para que ninguna reserva choque de cancha.
 -- -----------------------------------------------------------------------------
 insert into public.bookings (
   club_id, court, match_date, match_time, player_a, player_b,
-  status, winner_id, sets_winner, sets_loser, result_status, reported_by, ladder
+  status, winner_id, sets_winner, sets_loser, result_status, reported_by
 )
 select
   m.club, m.cancha, current_date - m.dias, m.hora,
-  pa.id, pb.id, 'confirmada', pg.id, m.sets_g, m.sets_p, 'confirmado', pa.id, false
+  pa.id, pb.id, 'confirmada', pg.id, m.sets_g, m.sets_p, 'confirmado', pa.id
 from (values
   -- Club Sirio
   ('c1', 1,  3, '19:00', 'rodrigo',   'sebastian', 'rodrigo',   3, 1),
@@ -222,12 +193,12 @@ where not exists (
 -- -----------------------------------------------------------------------------
 -- 4. Comprobación: si esto devuelve 12 filas, quedó todo listo.
 -- -----------------------------------------------------------------------------
-select c.name as club, m.position as puesto, p.name as jugador,
-       p.email as correo, p.category as categoria, p.national_rank as ranking
-  from public.ladder_members m
-  join public.profiles p on p.id = m.player_id
-  join public.clubs c on c.id = m.club_id
- order by c.name, m.position;
+select c.name as club, p.name as jugador, p.email as correo,
+       p.category as categoria, p.national_rank as ranking, p.rating as puntos
+  from public.profiles p
+  join public.clubs c on c.id = p.club_id
+ where not p.staff
+ order by c.name, p.rating desc nulls last;
 
 -- =============================================================================
 -- PARA BORRAR TODO ESTO (los perfiles, partidos y desafíos se van en cascada):

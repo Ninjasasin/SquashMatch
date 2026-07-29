@@ -394,26 +394,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 .late{color:var(--amber);font-size:12px;font-weight:700}
 .late.mucho{color:var(--red)}
 
-/* ---------- Escalerilla ---------- */
-.ladder-rules{
+/* ---------- Tarjeta de explicación ---------- */
+.info-card{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
   padding:16px 18px;margin-bottom:20px;
 }
-.ladder-rules h3{margin:0 0 8px;font-size:15px}
-.ladder-rules p{margin:0;font-size:13px;color:var(--ink-dim);line-height:1.6}
-.ladder-rules b{color:var(--ink)}
-.ladder-rules .chips{margin-top:12px}
+.info-card h3{margin:0 0 8px;font-size:15px}
+.info-card p{margin:0;font-size:13px;color:var(--ink-dim);line-height:1.6}
+.info-card b{color:var(--ink)}
 
-.pos-badge{
-  flex:none;width:44px;text-align:center;border-radius:11px;padding:8px 0;
-  background:var(--panel-2);border:1px solid var(--line);
-  font-size:16px;font-weight:800;color:var(--ink-dim);font-variant-numeric:tabular-nums;
-}
-.row.target .pos-badge{border-color:rgba(201,242,74,.45);color:var(--lime);background:rgba(201,242,74,.08)}
+/* Fila destacada: la propia cuenta dentro de una lista. */
 .row.mine{border-color:var(--lime-dark);background:linear-gradient(180deg,rgba(201,242,74,.07),transparent 60%),var(--panel)}
-.row.mine .pos-badge{background:var(--lime);color:#131700;border-color:var(--lime)}
-.row.challenger .pos-badge{border-color:rgba(255,138,61,.4);color:var(--amber)}
-.ladder-note{font-size:11.5px;color:var(--ink-faint);margin-top:4px}
 
 /* ---------- Mi perfil ---------- */
 .hero{
@@ -648,7 +639,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <ul>
       <li><b>Desafiar por categoría y ranking</b> — encuentras rivales de tu nivel y les propones día, hora y cancha.</li>
       <li><b>Reservar al instante</b> — cuando el rival acepta, la cancha queda tomada en el acto.</li>
-      <li><b>Competir en la escalerilla</b> — el ranking interno de tu club: desafías hasta tres puestos arriba y, si ganas, te quedas con su lugar.</li>
+      <li><b>Subir en el ranking</b> — cada partido confirmado mueve tus puntos, y ganarle a alguien mejor rankeado suma más.</li>
       <li><b>Seguir tus estadísticas</b> — efectividad, rachas, rivales frecuentes y tu historial de partidos.</li>
     </ul>
     <p class="auth-demo">Tu cuenta y tus partidos quedan guardados en la nube: entras
@@ -678,7 +669,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     <button class="tab" data-view="partidos">Mis partidos <span class="badge" id="matchBadge" style="display:none">0</span></button>
     <button class="tab" data-view="abiertas">Canchas abiertas <span class="badge" id="openBadge" style="display:none">0</span></button>
     <button class="tab" data-view="jugadores">Jugadores</button>
-    <button class="tab" data-view="escalerilla">Escalerilla</button>
     <button class="tab" data-view="ranking">Ranking</button>
     <button class="tab" data-view="canchas">Canchas</button>
     <button class="tab" data-view="perfil">Mi perfil</button>
@@ -935,19 +925,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     </div>
   </section>
 
-  <!-- ============ ESCALERILLA ============ -->
-  <section class="view" id="view-escalerilla">
-    <div class="filters" style="grid-template-columns:1fr">
-      <div class="field">
-        <label for="lClub">Club</label>
-        <select id="lClub"></select>
-      </div>
-    </div>
-    <div id="ladderIntro"></div>
-    <p class="section-title" id="ladderTitle"></p>
-    <div class="list" id="ladderList"></div>
-  </section>
-
   <!-- ============ ADMINISTRACIÓN DEL CLUB ============ -->
   <section class="view" id="view-club">
     <div id="clubHero"></div>
@@ -1065,7 +1042,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
   <!-- ============ ADMIN ============ -->
   <section class="view" id="view-admin">
-    <div class="ladder-rules">
+    <div class="info-card">
       <h3>Panel de administración</h3>
       <p>Acá ves todas las cuentas de la app y puedes entrar como cualquiera de ellas para
         recorrer el prototipo desde su punto de vista. Las cuentas creadas desde la pantalla
@@ -1273,7 +1250,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <span class="hint">Solo sets: los parciales de cada game no se piden.</span>
       </div>
       <div class="auth-note">Tu rival tiene que confirmar este resultado. Hasta que lo
-        haga, no cuenta para las estadísticas ni mueve la escalerilla.</div>
+        haga, no cuenta para las estadísticas ni mueve el ranking.</div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close="resultModal">Cancelar</button>
@@ -1339,7 +1316,7 @@ const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct'
    modo que todos los jugadores ven lo mismo.
    ========================================================= */
 let state = {
-  clubs:[], players:[], requests:[], bookings:[], invites:[], ladders:{},
+  clubs:[], players:[], requests:[], bookings:[], invites:[],
   ratingHistory:[], payments:[], clubAdmins:[], clubNotes:{}, contacts:{},
   meId:null, session:null, adminMode:false
 };
@@ -1350,9 +1327,8 @@ let state = {
 /* La nota del club queda fuera: puede llevar nombres de invitados y detalles de
    cobro, y se pide aparte con club_notes() solo si uno administra ese club. */
 const BOOKING_COLS = 'id,challenge_id,club_id,court,match_date,match_time,' +
-                     'player_a,player_b,status,winner_id,ladder,ladder_defender,' +
-                     'ladder_applied,created_at,reported_by,sets_winner,sets_loser,' +
-                     'result_status,source';
+                     'player_a,player_b,status,winner_id,created_at,reported_by,' +
+                     'sets_winner,sets_loser,result_status,source';
 
 const PROFILE_COLS = 'id,name,category,national_rank,club_id,hand,comuna,' +
                      'playing_since,available_days,preferred_slot,bio,role,created_at';
@@ -1382,7 +1358,7 @@ function mapChallenge(row){
   return {
     id:row.id, fromId:row.from_id, toId:row.to_id, clubId:row.club_id,
     date:row.match_date, time:row.match_time, court:row.court || 0,
-    ladder:!!row.ladder, msg:row.message || '', status:row.status,
+    msg:row.message || '', status:row.status,
     note:row.note || '', bookingId:row.booking_id,
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
@@ -1400,7 +1376,6 @@ function mapBooking(row){
       ? { winnerId:row.winner_id, sets:row.sets_winner + '-' + row.sets_loser,
           reportedBy:row.reported_by } : null,
     resultStatus:row.result_status || 'sin_resultado',
-    ladder:row.ladder ? { defenderId:row.ladder_defender } : null,
     source:row.source || 'app',
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
@@ -1427,14 +1402,13 @@ async function fetchProfiles(){
 }
 
 async function fetchAll(){
-  const [clubs, profiles, challenges, bookings, invites, ladders, ratings,
+  const [clubs, profiles, challenges, bookings, invites, ratings,
          pagos, admins] = await Promise.all([
     sb.from('clubs').select('*').order('name'),
     fetchProfiles(),
     sb.from('challenges').select('*').order('created_at', { ascending:false }),
     sb.from('bookings').select(BOOKING_COLS),
     sb.from('open_invites').select('*').order('match_date'),
-    sb.from('ladder_members').select('*').order('position'),
     sb.from('rating_history').select('*').order('created_at'),
     sb.from('payments').select('*'),
     sb.from('club_admins').select('*')
@@ -1470,20 +1444,6 @@ async function fetchAll(){
     : [];
   statsCache = null;   // los memos se rehacen con los datos nuevos
   deltaCache = null;
-
-  // Escalerillas: cada club con sus miembros en orden de puesto.
-  state.ladders = {};
-  if(ladders.error){
-    console.warn('Escalerillas no disponibles:', ladders.error.message);
-  } else {
-    ladders.data.forEach(function(m){
-      if(!state.ladders[m.club_id]) state.ladders[m.club_id] = [];
-      state.ladders[m.club_id].push({ id:m.player_id, pos:m.position });
-    });
-    Object.keys(state.ladders).forEach(function(c){
-      state.ladders[c].sort(function(a, b){ return a.pos - b.pos; });
-    });
-  }
 
   // Si el esquema de canchas abiertas todavia no se corrio, la app sigue andando.
   if(invites.error){
@@ -1737,51 +1697,10 @@ function checkSlot(clubId, date, time, aId, bId, preferred){
   return { ok:true, court:court };
 }
 
-/* =========================================================
-   ESCALERILLA (ranking interno de cada club)
-   ---------------------------------------------------------
-   Cada club tiene su lista ordenada: la posición es el índice + 1. Un jugador
-   puede desafiar hasta LADDER_RANGE puestos hacia arriba, y puede ser desafiado
-   por los mismos puestos hacia abajo. Si el desafiante gana, ambos intercambian
-   posiciones; si gana el defensor, la escalerilla no se mueve.
-   ========================================================= */
-const LADDER_RANGE = 3;
-
-/* La membresía vive en la tabla ladder_members: un jugador puede estar en varias
-   escalerillas, y estar en la de un club no depende de cuál sea su club habitual. */
-function ladderOf(clubId){
-  return (state.ladders[clubId] || []).map(function(m){ return m.id; });
-}
-
-/** Posición del jugador en esa escalerilla, o 0 si no es miembro. */
-function ladderPos(clubId, playerId){
-  const m = (state.ladders[clubId] || []).find(function(x){ return x.id === playerId; });
-  return m ? m.pos : 0;
-}
-
-/** Clubes en cuya escalerilla está inscrito el jugador. */
-function laddersOf(playerId){
-  return CLUBS.filter(function(c){ return ladderPos(c.id, playerId) > 0; });
-}
-
-/** Rivales desafiables: hasta LADDER_RANGE puestos hacia arriba. */
-function ladderTargets(clubId, playerId){
-  const pos = ladderPos(clubId, playerId);
-  if(pos <= 1) return [];
-  return ladderOf(clubId).slice(Math.max(0, pos - 1 - LADDER_RANGE), pos - 1);
-}
-
-function canChallengeLadder(clubId, challengerId, defenderId){
-  const cp = ladderPos(clubId, challengerId);
-  const dp = ladderPos(clubId, defenderId);
-  if(!cp || !dp) return false;
-  return dp < cp && cp - dp <= LADDER_RANGE;
-}
-
 /* Estadísticas derivadas de los partidos con resultado.
    Se calculan una vez por carga de datos y se guardan: antes cada llamada
-   recorría todas las reservas, y se llama una vez por jugador en cada tabla,
-   por cada fila de la escalerilla y dentro del ordenamiento del directorio. */
+   recorría todas las reservas, y se llama una vez por jugador en cada tabla
+   y dentro del ordenamiento del directorio. */
 let statsCache = null;
 
 function buildStats(){
@@ -1809,12 +1728,8 @@ function statsOf(playerId){
 /* Las validaciones del cliente son para la interfaz: avisan temprano y evitan
    viajes inútiles. La verdad la tiene el servidor, que revalida todo dentro de
    accept_challenge() antes de reservar. */
-async function sendRequest(toId, clubId, date, time, msg, court, ladderClubId){
+async function sendRequest(toId, clubId, date, time, msg, court){
   const fromId = me().id;
-
-  if(ladderClubId && !canChallengeLadder(ladderClubId, fromId, toId)){
-    return { ok:false, reason:'Ese jugador está fuera de tu rango en la escalerilla.' };
-  }
 
   const check = checkSlot(clubId, date, time, fromId, toId, court);
   if(!check.ok) return { ok:false, reason:check.reason };
@@ -1828,7 +1743,7 @@ async function sendRequest(toId, clubId, date, time, msg, court, ladderClubId){
   const { error } = await sb.from('challenges').insert({
     from_id:fromId, to_id:toId, club_id:clubId,
     match_date:date, match_time:time, court:court || 0,
-    ladder:!!ladderClubId, message:(msg || '').trim()
+    message:(msg || '').trim()
   });
   if(error) return { ok:false, reason:error.message };
 
@@ -1889,18 +1804,6 @@ async function clubCancel(bookingId){
 
 async function markPayment(paymentId, pagado){
   const { error } = await sb.rpc('mark_payment', { p_payment:paymentId, p_paid:pagado });
-  await refresh();
-  return error ? { ok:false, reason:error.message } : { ok:true };
-}
-
-async function joinLadder(clubId){
-  const { error } = await sb.rpc('join_ladder', { p_club:clubId });
-  await refresh();
-  return error ? { ok:false, reason:error.message } : { ok:true };
-}
-
-async function leaveLadder(clubId){
-  const { error } = await sb.rpc('leave_ladder', { p_club:clubId });
   await refresh();
   return error ? { ok:false, reason:error.message } : { ok:true };
 }
@@ -1970,7 +1873,6 @@ const VISTAS = {
   partidos:     function(){ renderMatches(); },
   abiertas:     function(){ renderInvites(); },
   perfil:       function(){ renderProfile(); },
-  escalerilla:  function(){ renderLadder(); },
   ranking:      function(){ renderRanking(); },
   canchas:      function(){ renderCourts(); },
   club:         function(){ renderClub(); },
@@ -2145,8 +2047,7 @@ function reqLine(r, dir){
     '<div class="avatar'+(dir === 'in' ? '' : ' alt')+'">'+esc(initials(other ? other.name : '??'))+'</div>' +
     '<div class="grow">' +
       '<div class="row-title">'+esc(other ? other.name : 'Jugador') +
-        ' <span class="chip cat">'+esc(other ? other.category : '')+'</span>' +
-        (r.ladder ? ' <span class="chip">escalerilla</span>' : '') + '</div>' +
+        ' <span class="chip cat">'+esc(other ? other.category : '')+'</span></div>' +
       '<div class="row-sub"><b>'+fmtDate(r.date)+' · '+r.time+'</b> — '+esc(c ? c.name : '') +
         (r.court ? ' · pide la cancha ' + r.court : '') + '</div>' +
       (r.msg ? '<div class="msg">“'+esc(r.msg)+'”</div>' : '') +
@@ -2234,8 +2135,7 @@ function matchLine(b, past){
     '<div class="avatar alt">'+esc(initials(other ? other.name : '??'))+'</div>' +
     '<div class="grow">' +
       '<div class="row-title">vs '+esc(other ? other.name : 'Jugador') +
-        ' <span class="chip cat">'+esc(other ? other.category : '')+'</span>' +
-        (b.ladder ? ' <span class="chip">escalerilla</span>' : '') + '</div>' +
+        ' <span class="chip cat">'+esc(other ? other.category : '')+'</span></div>' +
       '<div class="row-sub"><b>'+fmtDate(b.date)+' · '+b.time+'</b> — '+esc(c ? c.name : '')+'</div>' +
       (!past && contact ? '<div class="row-sub">Contacto: '+esc(contact)+'</div>' : '') +
     '</div>' +
@@ -2896,105 +2796,6 @@ function renderInvites(){
     ? otras.map(function(i){ return inviteLine(i, 'otra'); }).join('')
     : '<div class="empty">Nadie ha publicado horarios todavía. Sé el primero.</div>';
 
-}
-
-/* ---------- Escalerilla ---------- */
-function renderLadder(){
-  const clubId = $('lClub').value;
-  const c = club(clubId);
-  if(!c) return;
-
-  const list = ladderOf(clubId);
-  const mine = me().id;
-  const myPos = ladderPos(clubId, mine);
-  const targets = ladderTargets(clubId, mine);
-  const myClub = club(me().clubId);
-
-  // Cabecera con las reglas y la situación del jugador en esta escalerilla.
-  let situacion;
-  const otras = laddersOf(mine).filter(function(c){ return c.id !== clubId; });
-  const tambien = otras.length
-    ? ' También estás en la de <b>' + otras.map(function(c){ return esc(c.name); }).join('</b> y <b>') + '</b>.'
-    : '';
-
-  if(!myPos){
-    situacion = 'No estás inscrito en esta escalerilla. Puedes unirte cuando quieras y ' +
-      'entras al último puesto; se puede estar en varias a la vez.' + tambien;
-  } else if(myPos === 1){
-    situacion = 'Estás <b>primero</b>. No tienes a quién desafiar: te toca defender la punta contra los puestos ' +
-      '#2 al #' + Math.min(list.length, 1 + LADDER_RANGE) + '.' + tambien;
-  } else {
-    const desde = Math.max(1, myPos - LADDER_RANGE);
-    const retadores = myPos < list.length
-      ? 'Te pueden desafiar los puestos #' + (myPos + 1) + ' al #' + Math.min(list.length, myPos + LADDER_RANGE) + '.'
-      : 'Eres el último de la escalerilla: nadie puede desafiarte todavía.';
-    situacion = 'Estás en el puesto <b>#' + myPos + '</b>. Puedes desafiar del <b>#' + desde + '</b> al <b>#' +
-      (myPos - 1) + '</b>. ' + retadores + tambien;
-  }
-
-  $('ladderIntro').innerHTML =
-    '<div class="ladder-rules">' +
-      '<h3>Escalerilla de ' + esc(c.name) + '</h3>' +
-      '<p>Cada jugador puede desafiar hasta <b>' + LADDER_RANGE + ' puestos hacia arriba</b>. ' +
-      'Si el desafiante gana, <b>intercambian posiciones</b>; si gana el defensor, la escalerilla no se mueve. ' +
-      'El partido se reserva como cualquier otro y la posición se actualiza cuando se registra el resultado.</p>' +
-      '<p style="margin-top:10px">' + situacion + '</p>' +
-      '<div class="btn-row" style="margin-top:14px">' +
-        (myPos
-          ? '<button class="btn danger sm" data-leaveladder="'+clubId+'">Salir de esta escalerilla</button>'
-          : '<button class="btn primary sm" data-joinladder="'+clubId+'">Unirme a esta escalerilla</button>') +
-      '</div>' +
-    '</div>';
-
-  $('ladderTitle').textContent = list.length + (list.length === 1 ? ' jugador' : ' jugadores') + ' · ' + c.name;
-
-  if(!list.length){
-    $('ladderList').innerHTML = '<div class="empty">Nadie se ha inscrito en esta escalerilla todavía. ' +
-      'El primero en unirse queda en el puesto #1.</div>';
-    return;
-  }
-
-  $('ladderList').innerHTML = list.map(function(id, i){
-    const p = player(id);
-    if(!p) return '';
-    const pos = i + 1;
-    const st = statsOf(id);
-    const esMio = id === mine;
-    const esObjetivo = targets.indexOf(id) > -1;
-    const meDesafia = myPos && pos > myPos && pos - myPos <= LADDER_RANGE;
-
-    // ¿Ya hay un desafío de escalerilla pendiente entre ambos?
-    const pendiente = requestsLive().some(function(r){
-      return r.status === 'pendiente' && r.ladder && r.clubId === clubId &&
-        ((r.fromId === mine && r.toId === id) || (r.fromId === id && r.toId === mine));
-    });
-
-    let derecha = '';
-    if(esMio){
-      derecha = '<span class="state ok">tu posición</span>';
-    } else if(pendiente){
-      derecha = '<span class="state pend">desafío pendiente</span>';
-    } else if(esObjetivo){
-      derecha = '<button class="btn primary sm" data-ladder-challenge="'+id+'" data-ladder-club="'+clubId+'">' +
-                'Desafiar</button>';
-    } else if(meDesafia){
-      derecha = '<span class="state info">puede desafiarte</span>';
-    }
-
-    return '<div class="row' + (esMio ? ' mine' : '') + (esObjetivo ? ' target' : '') +
-             (meDesafia ? ' challenger' : '') + '">' +
-      '<div class="pos-badge">' + pos + '</div>' +
-      '<div class="avatar' + (esMio ? '' : ' alt') + '">' + esc(initials(p.name)) + '</div>' +
-      '<div class="grow">' +
-        '<div class="row-title">' + esc(p.name) + ' <span class="chip cat">' + esc(p.category) + '</span></div>' +
-        '<div class="row-sub">' + (p.rating ? p.rating + ' pts · ' : '') +
-          st.won + 'G-' + st.lost + 'P</div>' +
-        (esObjetivo ? '<div class="ladder-note">A ' + (myPos - pos) +
-          (myPos - pos === 1 ? ' puesto' : ' puestos') + ' sobre ti · dentro de tu rango</div>' : '') +
-      '</div>' +
-      derecha +
-    '</div>';
-  }).join('');
 }
 
 /* ---------- Canchas ---------- */
@@ -3718,7 +3519,6 @@ function fillConfig(p){
 
 async function saveConfig(){
   const p = me();
-  const clubPrevio = p.clubId;
   const name = $('cfName').value.trim();
   if(name.length < 3){ toast('Escribe tu nombre completo.', true); $('cfName').focus(); return; }
 
@@ -3749,13 +3549,7 @@ async function saveConfig(){
 
   setDirty(false);
   await refresh();
-
-  if(clubPrevio !== me().clubId){
-    toast('Perfil actualizado. Ojo: cambiar de club no te mueve de escalerilla; ' +
-          'eso se hace desde la sección Escalerilla.');
-  } else {
-    toast('Perfil actualizado.');
-  }
+  toast('Perfil actualizado.');
 }
 
 /* =========================================================
@@ -3763,7 +3557,6 @@ async function saveConfig(){
    ========================================================= */
 let challengeTargetId = null;
 let challengeCourt = 0;      // 0 = cualquiera disponible
-let challengeLadder = null;  // club de la escalerilla si el desafío es válido por ella
 
 /** Próximo bloque razonable para proponer: hoy si aún queda hora (con 1h de margen), si no mañana. */
 function defaultSlot(){
@@ -3782,26 +3575,15 @@ function defaultSlot(){
 function openModal(id){ $(id).classList.add('open'); }
 function closeModal(id){ $(id).classList.remove('open'); }
 
-function openChallenge(targetId, ladderClubId){
+function openChallenge(targetId){
   const t = player(targetId);
   if(!t) return;
   challengeTargetId = targetId;
-  challengeLadder = ladderClubId || null;
   $('chName').textContent = t.name;
 
   const c = club(t.clubId);
-  if(challengeLadder){
-    // Un partido de escalerilla se juega sí o sí en el club de esa escalerilla.
-    const lc = club(challengeLadder);
-    $('chSub').textContent = 'Válido por la escalerilla de ' + lc.name + ' · desafías del puesto #' +
-      ladderPos(challengeLadder, me().id) + ' al #' + ladderPos(challengeLadder, targetId);
-    $('chClub').value = challengeLadder;
-    $('chClub').disabled = true;
-  } else {
-    $('chSub').textContent = t.category + (t.rank ? ' · #'+t.rank+' nacional' : '') + (c ? ' · juega en '+c.name : '');
-    $('chClub').value = t.clubId;
-    $('chClub').disabled = false;
-  }
+  $('chSub').textContent = t.category + (t.rank ? ' · #'+t.rank+' nacional' : '') + (c ? ' · juega en '+c.name : '');
+  $('chClub').value = t.clubId;
   challengeCourt = 0;
   // Mantiene la fecha/hora anterior si sigue siendo futura; si no, propone el próximo bloque.
   if(!$('chDate').value || isPast($('chDate').value, $('chTime').value)){
@@ -3891,7 +3673,7 @@ function isAdmin(){ return !!(me() && me().role === 'admin'); }
 /** Datos mínimos para poder usar la app. */
 function profileComplete(p){
   if(!p) return false;
-  if(p.staff) return true;   // las cuentas de club no eligen categoría ni escalerilla
+  if(p.staff) return true;   // las cuentas de club no eligen categoría ni club
   return !!(p.name && p.category && p.clubId);
 }
 
@@ -3992,7 +3774,7 @@ function startAuth(mode){
     const yo = me();
     if(yo && yo.name) $('auName').value = yo.name;
     $('authNote').innerHTML = '<b>Falta un paso.</b> Elige tu categor&iacute;a y tu club para ' +
-      'entrar al directorio y a la escalerilla. Todo esto se puede cambiar despu&eacute;s en Mi perfil.';
+      'entrar al directorio y al ranking. Todo esto se puede cambiar despu&eacute;s en Mi perfil.';
     $('auSubmit').textContent = 'Entrar a la app';
     setTimeout(function(){ $('auCat').focus(); }, 30);
   }
@@ -4014,8 +3796,8 @@ async function submitAuth(){
 
       await fetchAll();
       showApp();
-      toast('Listo, ya estás dentro. Pasa por Escalerilla si quieres inscribirte ' +
-            'en el ranking interno de un club.');
+      toast('Listo, ya estás dentro. Busca rival en Jugadores o mira quién publicó ' +
+            'horario en Canchas abiertas.');
       return;
     }
 
@@ -4114,9 +3896,6 @@ function renderAdmin(){
 
   $('adminUsers').innerHTML = orden.map(function(p){
     const cl = club(p.clubId);
-    const escalerillas = laddersOf(p.id).map(function(c){
-      return c.name + ' #' + ladderPos(c.id, p.id);
-    }).join(' · ');
     const st = statsOf(p.id);
     const esActual = p.id === state.meId;
 
@@ -4128,7 +3907,7 @@ function renderAdmin(){
           (p.role === 'admin' ? ' <span class="chip">admin</span>' : '') + '</div>' +
         '<div class="row-sub">' + esc(cl ? cl.name : 'sin club') + ' &middot; ' +
           st.played + ' partidos, ' + st.won + ' ganados' +
-          (escalerillas ? ' &middot; ' + esc(escalerillas) : ' &middot; sin escalerilla') + '</div>' +
+          (p.rating ? ' &middot; ' + p.rating + ' pts' : '') + '</div>' +
         '<div class="row-sub mono">' + esc(p.id) +
           (p.createdAt ? ' &middot; desde ' + fmtDate(isoOf(new Date(p.createdAt))) : '') + '</div>' +
       '</div>' +
@@ -4161,7 +3940,7 @@ function fillSelect(sel, options, firstLabel, firstValue){
 /** Rellena los selectores de club una vez que la base entregó los clubes. */
 function fillClubSelects(){
   const previos = {};
-  ['cfClub','auClub','fClub','cClub','lClub','chClub','ivClub','oClub','clClub'].forEach(function(id){
+  ['cfClub','auClub','fClub','cClub','chClub','ivClub','oClub','clClub'].forEach(function(id){
     previos[id] = $(id).value;
   });
 
@@ -4169,7 +3948,6 @@ function fillClubSelects(){
   fillSelect($('auClub'), clubOptions(), null, null);
   fillSelect($('fClub'), clubOptions(), 'Todos los clubes', 'todos');
   fillSelect($('cClub'), clubOptions(), null, null);
-  fillSelect($('lClub'), clubOptions(), null, null);
   $('gHoras').innerHTML = SLOTS.map(function(t){
     return '<option value="h|' + parseInt(t, 10) + '">' + t + ' hrs</option>';
   }).join('');
@@ -4216,26 +3994,6 @@ function initControls(){
   // La agenda del club mira hacia atrás también: los cobros atrasados están ahí.
   $('clDate').max = mx;
   $('clDate').value = t;
-}
-
-/* Para contar el movimiento de la escalerilla hay que mirar las posiciones
-   antes y después de confirmar: el intercambio lo hace el servidor. */
-function ladderSnapshot(bookingId){
-  const b = state.bookings.find(function(x){ return x.id === bookingId; });
-  if(!b || !b.ladder || !b.reporte) return null;
-  return { clubId:b.clubId, winnerId:b.reporte.winnerId,
-           pos:ladderPos(b.clubId, b.reporte.winnerId) };
-}
-
-function ladderMoveMessage(bookingId, antes){
-  if(!antes) return 'Resultado confirmado.';
-  const ahora = ladderPos(antes.clubId, antes.winnerId);
-  const g = player(antes.winnerId);
-  if(ahora && antes.pos && ahora < antes.pos){
-    return 'Resultado confirmado. ' + (g ? g.name.split(' ')[0] : 'El desafiante') +
-           ' sube del puesto #' + antes.pos + ' al #' + ahora + ' en la escalerilla.';
-  }
-  return 'Resultado confirmado. La escalerilla no se mueve.';
 }
 
 /** Cambia de pestaña. También la usan los accesos directos de Inicio. */
@@ -4303,7 +4061,6 @@ function bindEvents(){
     if(e.key === 'Enter'){ e.preventDefault(); aplicarFiltros(); }
   });
   $('rCat').addEventListener('change', renderRanking);
-  $('lClub').addEventListener('change', renderLadder);
   ['clClub','clDate','gPeriodo'].forEach(function(id){
     $(id).addEventListener('input', function(){ ventanaTop = 3; renderClub(); });
   });
@@ -4378,10 +4135,10 @@ function bindEvents(){
 
   // Acciones delegadas
   document.addEventListener('click', async function(e){
-    const el = e.target.closest('[data-goto],[data-news],[data-challenge],[data-ladder-challenge],' +
+    const el = e.target.closest('[data-goto],[data-news],[data-challenge],' +
       '[data-accept],[data-reject],[data-cancelreq],[data-cancelbooking],[data-result],' +
       '[data-confirmresult],[data-rejectresult],[data-joininvite],[data-confirminvite],' +
-      '[data-rejectinvite],[data-cancelinvite],[data-joinladder],[data-leaveladder],' +
+      '[data-rejectinvite],[data-cancelinvite],' +
       '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
       '[data-vermas],[data-vermenos]');
     if(!el) return;
@@ -4393,7 +4150,6 @@ function bindEvents(){
       if(d.pane) activateProfilePane(d.pane);
       return;
     }
-    if(d.ladderChallenge){ openChallenge(d.ladderChallenge, d.ladderClub); return; }
     if(d.challenge){ openChallenge(d.challenge); return; }
     if(d.result){ openResult(d.result); return; }
 
@@ -4444,19 +4200,6 @@ function bindEvents(){
         const res = await markPayment(d.pay || d.unpay, !!d.pay);
         if(!res.ok){ toast(res.reason, true); }
         else { toast(d.pay ? 'Cobro marcado como pagado.' : 'Cobro devuelto a pendiente.'); }
-      } else if(d.joinladder){
-        const res = await joinLadder(d.joinladder);
-        if(!res.ok){ toast(res.reason, true); }
-        else {
-          const c = club(d.joinladder);
-          toast('Te uniste a la escalerilla de ' + (c ? c.name : 'ese club') +
-                ': quedas en el puesto #' + ladderPos(d.joinladder, me().id) + '.');
-        }
-      } else if(d.leaveladder){
-        if(confirm('¿Salir de esta escalerilla? Pierdes tu puesto y los de abajo suben uno.')){
-          const res = await leaveLadder(d.leaveladder);
-          toast(res.ok ? 'Saliste de la escalerilla.' : res.reason, !res.ok);
-        }
       } else if(d.joininvite){
         const res = await joinInvite(d.joininvite);
         toast(res.ok
@@ -4482,10 +4225,10 @@ function bindEvents(){
         await cancelInvite(d.cancelinvite);
         toast('Publicación dada de baja.');
       } else if(d.confirmresult){
-        const antes = ladderSnapshot(d.confirmresult);
         const res = await confirmResult(d.confirmresult, true);
-        if(!res.ok){ toast(res.reason, true); }
-        else { toast(ladderMoveMessage(d.confirmresult, antes)); }
+        toast(res.ok
+          ? 'Resultado confirmado. Ya cuenta para las estadísticas y el ranking.'
+          : res.reason, !res.ok);
       } else if(d.rejectresult){
         const res = await confirmResult(d.rejectresult, false);
         toast(res.ok
@@ -4508,12 +4251,12 @@ function bindEvents(){
   $('chSend').addEventListener('click', async function(){
     this.disabled = true;
     const res = await sendRequest(challengeTargetId, $('chClub').value, $('chDate').value,
-                                  $('chTime').value, $('chMsg').value, challengeCourt, challengeLadder);
+                                  $('chTime').value, $('chMsg').value, challengeCourt);
     this.disabled = false;
     if(res.ok){
       closeModal('challengeModal');
-      toast('Desafío' + (challengeLadder ? ' de escalerilla' : '') + ' enviado a ' +
-            player(challengeTargetId).name + '. Queda pendiente de su respuesta.');
+      toast('Desafío enviado a ' + player(challengeTargetId).name +
+            '. Queda pendiente de su respuesta.');
     } else {
       toast(res.reason, true);
       updateAvail();
@@ -4555,7 +4298,6 @@ function listenForChanges(){
     .on('postgres_changes', { event:'*', schema:'public', table:'bookings' },       refreshSoon)
     .on('postgres_changes', { event:'*', schema:'public', table:'profiles' },       refreshSoon)
     .on('postgres_changes', { event:'*', schema:'public', table:'open_invites' },   refreshSoon)
-    .on('postgres_changes', { event:'*', schema:'public', table:'ladder_members' }, refreshSoon)
     .on('postgres_changes', { event:'*', schema:'public', table:'rating_history' }, refreshSoon)
     .on('postgres_changes', { event:'*', schema:'public', table:'payments' },       refreshSoon)
     .subscribe();

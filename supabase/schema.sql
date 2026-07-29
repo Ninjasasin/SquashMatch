@@ -41,28 +41,16 @@ create table if not exists public.profiles (
   preferred_slot text default '',
   bio            text default '',
   role           text not null default 'player' check (role in ('player','admin')),
-  ladder_pos     int,
   created_at     timestamptz not null default now()
 );
 
 -- Cuentas de administración de club: no son jugadores y no aparecen en el
--- directorio, la escalerilla ni el ranking. Va acá y no más abajo porque los
--- permisos por columna de la sección 7 la nombran.
+-- directorio ni en el ranking. Va acá y no más abajo porque los permisos por
+-- columna de la sección 6 la nombran.
 alter table public.profiles
   add column if not exists staff boolean not null default false;
 
--- La posición en la escalerilla es única dentro de cada club. DEFERRABLE porque
--- al intercambiar dos jugadores ambos quedan momentáneamente en la misma.
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'profiles_ladder_unique') then
-    alter table public.profiles
-      add constraint profiles_ladder_unique unique (club_id, ladder_pos)
-      deferrable initially deferred;
-  end if;
-end $$;
-
-create index if not exists profiles_club_idx on public.profiles (club_id, ladder_pos);
+create index if not exists profiles_club_idx on public.profiles (club_id);
 
 -- =============================================================================
 -- 3. DESAFÍOS
@@ -75,7 +63,6 @@ create table if not exists public.challenges (
   match_date date not null,
   match_time text not null,
   court      int  not null default 0,   -- 0 = cualquiera disponible
-  ladder     boolean not null default false,
   message    text default '',
   status     text not null default 'pendiente'
              check (status in ('pendiente','aceptada','rechazada','cancelada','caducada')),
@@ -104,9 +91,6 @@ create table if not exists public.bookings (
                    check (status in ('confirmada','cancelada')),
   winner_id        uuid references public.profiles(id) on delete set null,
   score            text default '',
-  ladder           boolean not null default false,
-  ladder_defender  uuid references public.profiles(id) on delete set null,
-  ladder_applied   boolean not null default false,
   created_at       timestamptz not null default now()
 );
 
@@ -161,129 +145,7 @@ create unique index if not exists bookings_slot_unique
 create index if not exists bookings_players_idx on public.bookings (player_a, player_b, match_date);
 
 -- =============================================================================
--- 5. ESCALERILLA
--- La membresia es explicita y no depende del club del perfil: un jugador se une
--- a la escalerilla que quiera y puede estar en varias a la vez.
--- =============================================================================
-create table if not exists public.ladder_members (
-  club_id   text not null references public.clubs(id) on delete cascade,
-  player_id uuid not null references public.profiles(id) on delete cascade,
-  position  int  not null,
-  joined_at timestamptz not null default now(),
-  primary key (club_id, player_id)
-);
-
--- Dos jugadores no pueden ocupar el mismo puesto. DEFERRABLE porque al
--- intercambiarse quedan un instante en la misma posicion.
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'ladder_members_pos_unique') then
-    alter table public.ladder_members
-      add constraint ladder_members_pos_unique unique (club_id, position)
-      deferrable initially deferred;
-  end if;
-end $$;
-
--- Traspaso de la version anterior, donde la posicion vivia en el perfil.
-insert into public.ladder_members (club_id, player_id, position)
-select p.club_id, p.id, p.ladder_pos
-  from public.profiles p
- where p.club_id is not null and p.ladder_pos is not null
-on conflict (club_id, player_id) do nothing;
-
--- Los triggers que ubicaban al jugador segun el club del perfil ya no aplican.
--- El trigger de ladder_members se borra primero: al correr el esquema por
--- segunda vez, la funcion ya tiene ese trigger colgando y no se puede eliminar.
-drop trigger if exists profiles_place_in_ladder on public.profiles;
-drop trigger if exists profiles_close_ladder_gap on public.profiles;
-drop trigger if exists ladder_close_gap on public.ladder_members;
-drop function if exists public.place_in_ladder();
-drop function if exists public.close_ladder_gap();
-
--- Al final de la escalerilla elegida.
-create or replace function public.join_ladder(p_club text)
-returns public.ladder_members
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  siguiente int;
-  fila      public.ladder_members;
-begin
-  if not exists (select 1 from public.clubs where id = p_club) then
-    raise exception 'Ese club no existe.';
-  end if;
-  if exists (select 1 from public.ladder_members
-              where club_id = p_club and player_id = auth.uid()) then
-    raise exception 'Ya estas en esa escalerilla.';
-  end if;
-
-  select coalesce(max(position), 0) + 1 into siguiente
-    from public.ladder_members where club_id = p_club;
-
-  insert into public.ladder_members (club_id, player_id, position)
-  values (p_club, auth.uid(), siguiente)
-  returning * into fila;
-
-  return fila;
-end $$;
-
--- Salir cierra el hueco: los de abajo suben un puesto.
-create or replace function public.leave_ladder(p_club text)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  mi_pos int;
-begin
-  select position into mi_pos from public.ladder_members
-   where club_id = p_club and player_id = auth.uid();
-  if mi_pos is null then
-    raise exception 'No estas en esa escalerilla.';
-  end if;
-
-  delete from public.ladder_members
-   where club_id = p_club and player_id = auth.uid();
-
-  update public.ladder_members
-     set position = position - 1
-   where club_id = p_club and position > mi_pos;
-end $$;
-
--- Si se elimina la cuenta, los de abajo suben.
-create or replace function public.close_ladder_gap()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  update public.ladder_members
-     set position = position - 1
-   where club_id = old.club_id and position > old.position;
-  return old;
-end $$;
-
-drop trigger if exists ladder_close_gap on public.ladder_members;
-create trigger ladder_close_gap
-  after delete on public.ladder_members
-  for each row execute function public.close_ladder_gap();
-
-alter table public.ladder_members enable row level security;
-grant select on public.ladder_members to authenticated;
-
-drop policy if exists ladder_read on public.ladder_members;
-create policy ladder_read on public.ladder_members
-  for select to authenticated using (true);
-
-grant execute on function public.join_ladder(text) to authenticated;
-grant execute on function public.leave_ladder(text) to authenticated;
-
--- =============================================================================
--- 6. PERFIL AUTOMÁTICO AL REGISTRARSE
+-- 5. PERFIL AUTOMÁTICO AL REGISTRARSE
 -- Google entrega el nombre y el correo; el resto lo completa el jugador.
 -- =============================================================================
 create or replace function public.handle_new_user()
@@ -313,7 +175,7 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- =============================================================================
--- 7. SEGURIDAD (RLS + permisos por columna)
+-- 6. SEGURIDAD (RLS + permisos por columna)
 -- El directorio es visible para cualquier jugador autenticado, pero el teléfono
 -- y el correo NO: esos se entregan solo a quien tenga un partido reservado con
 -- esa persona, a través de la función contact_of().
@@ -347,7 +209,7 @@ create policy profiles_update_own on public.profiles
 revoke select on public.profiles from authenticated;
 grant select (
   id, name, category, national_rank, club_id, hand, comuna,
-  playing_since, available_days, preferred_slot, bio, role, ladder_pos, created_at,
+  playing_since, available_days, preferred_slot, bio, role, created_at,
   rating, rating_matches, staff
 ) on public.profiles to authenticated;
 grant update (
@@ -416,9 +278,8 @@ create policy challenges_update on public.challenges
 revoke select on public.bookings from authenticated;
 grant select (
   id, challenge_id, club_id, court, match_date, match_time,
-  player_a, player_b, status, winner_id, score, ladder, ladder_defender,
-  ladder_applied, created_at, reported_by, sets_winner, sets_loser,
-  result_status, source
+  player_a, player_b, status, winner_id, score, created_at, reported_by,
+  sets_winner, sets_loser, result_status, source
 ) on public.bookings to authenticated;
 
 create or replace function public.club_notes(p_club text)
@@ -449,7 +310,7 @@ create policy bookings_cancel on public.bookings
   with check (status = 'cancelada');
 
 -- =============================================================================
--- 8. ACEPTAR UN DESAFÍO = RESERVAR
+-- 7. ACEPTAR UN DESAFÍO = RESERVAR
 -- Toda la validación vive acá, en una sola transacción: es el único lugar donde
 -- se puede garantizar que dos personas no se lleven la misma cancha.
 -- =============================================================================
@@ -466,8 +327,6 @@ declare
   n         int;
   new_book  public.bookings;
   slot_ts   timestamptz;
-  pos_from  int;
-  pos_to    int;
 begin
   select * into ch from public.challenges where id = p_challenge for update;
   if ch is null then
@@ -488,21 +347,6 @@ begin
        set status = 'caducada', note = 'Ese horario ya pasó.'
      where id = ch.id;
     raise exception 'Ese horario ya pasó.';
-  end if;
-
-  -- Rango de la escalerilla, revalidado al momento de aceptar.
-  if ch.ladder then
-    select position into pos_from from public.ladder_members
-      where club_id = ch.club_id and player_id = ch.from_id;
-    select position into pos_to from public.ladder_members
-      where club_id = ch.club_id and player_id = ch.to_id;
-    if pos_from is null or pos_to is null or pos_to >= pos_from or pos_from - pos_to > 3 then
-      update public.challenges
-         set status = 'caducada',
-             note = 'Las posiciones de la escalerilla cambiaron y el desafío quedó fuera de rango.'
-       where id = ch.id;
-      raise exception 'Las posiciones de la escalerilla cambiaron y el desafío quedó fuera de rango.';
-    end if;
   end if;
 
   -- Ninguno de los dos puede tener otro partido en ese bloque.
@@ -557,10 +401,10 @@ begin
 
   insert into public.bookings (
     challenge_id, club_id, court, match_date, match_time,
-    player_a, player_b, ladder, ladder_defender
+    player_a, player_b
   ) values (
     ch.id, ch.club_id, chosen, ch.match_date, ch.match_time,
-    ch.from_id, ch.to_id, ch.ladder, case when ch.ladder then ch.to_id else null end
+    ch.from_id, ch.to_id
   )
   returning * into new_book;
 
@@ -582,8 +426,8 @@ begin
 end $$;
 
 -- =============================================================================
--- 9. RESULTADO EN DOS PASOS
--- Un jugador lo carga, el otro lo confirma. La escalerilla se mueve recien al
+-- 8. RESULTADO EN DOS PASOS
+-- Un jugador lo carga, el otro lo confirma. El rating se mueve recien al
 -- confirmarse: sin eso, cualquiera podria inventarse una victoria y subir.
 -- =============================================================================
 create or replace function public.report_result(
@@ -649,11 +493,8 @@ security definer
 set search_path = public
 as $$
 declare
-  bk         public.bookings;
-  updated    public.bookings;
-  challenger uuid;
-  pos_chal   int;
-  pos_def    int;
+  bk      public.bookings;
+  updated public.bookings;
 begin
   select * into bk from public.bookings where id = p_booking for update;
   if bk is null then
@@ -686,37 +527,13 @@ begin
   -- El rating se mueve solo con resultados confirmados por ambos.
   perform public.apply_elo(updated.id);
 
-  -- Escalerilla: si gano el desafiante, intercambian posiciones.
-  if updated.ladder and not updated.ladder_applied then
-    challenger := case when updated.ladder_defender = updated.player_b
-                       then updated.player_a else updated.player_b end;
-
-    if updated.winner_id = challenger then
-      set constraints all deferred;
-      select position into pos_chal from public.ladder_members
-        where club_id = updated.club_id and player_id = challenger;
-      select position into pos_def from public.ladder_members
-        where club_id = updated.club_id and player_id = updated.ladder_defender;
-
-      if pos_chal is not null and pos_def is not null then
-        update public.ladder_members set position = pos_def
-          where club_id = updated.club_id and player_id = challenger;
-        update public.ladder_members set position = pos_chal
-          where club_id = updated.club_id and player_id = updated.ladder_defender;
-      end if;
-    end if;
-
-    update public.bookings set ladder_applied = true where id = updated.id
-    returning * into updated;
-  end if;
-
   return updated;
 end $$;
 
 drop function if exists public.register_result(uuid, uuid, text);
 
 -- =============================================================================
--- 10. PERMISOS DE EJECUCIÓN
+-- 9. PERMISOS DE EJECUCIÓN
 -- =============================================================================
 grant execute on function public.accept_challenge(uuid) to authenticated;
 grant execute on function public.report_result(uuid, uuid, int, int) to authenticated;
@@ -1115,10 +932,10 @@ begin
 
   insert into public.bookings (
     club_id, court, match_date, match_time, player_a, player_b,
-    status, ladder, source, club_note
+    status, source, club_note
   ) values (
     p_club, p_court, p_date, p_time, null, null,
-    'confirmada', false, 'club', coalesce(p_note, '')
+    'confirmada', 'club', coalesce(p_note, '')
   )
   returning * into nueva;
 
@@ -1224,11 +1041,10 @@ select b.id, j.jugador, b.club_id, coalesce(c.court_price, 15000) / 2,
 on conflict (booking_id, player_id) do nothing;
 
 -- =============================================================================
--- 11. CANCHAS ABIERTAS
+-- 10. CANCHAS ABIERTAS
 -- Publicar "quiero jugar tal día a tal hora" sin apuntarle a nadie. Otro jugador
 -- se suma y el que publicó confirma. Publicar NO bloquea la cancha: la primera
 -- pareja que confirma se la lleva, venga de un desafío o de una publicación.
--- No corren por la escalerilla; esa se desafía solo desde la escalerilla.
 -- =============================================================================
 create table if not exists public.open_invites (
   id           uuid primary key default gen_random_uuid(),
@@ -1410,10 +1226,10 @@ begin
   end if;
 
   insert into public.bookings (
-    club_id, court, match_date, match_time, player_a, player_b, ladder
+    club_id, court, match_date, match_time, player_a, player_b
   ) values (
     inv.club_id, chosen, inv.match_date, inv.match_time,
-    inv.player_id, inv.candidate_id, false
+    inv.player_id, inv.candidate_id
   )
   returning * into new_book;
 
@@ -1438,7 +1254,7 @@ grant execute on function public.join_invite(uuid) to authenticated;
 grant execute on function public.confirm_invite(uuid, boolean) to authenticated;
 
 -- =============================================================================
--- 12. CAMBIOS EN VIVO
+-- 11. CAMBIOS EN VIVO
 -- Supabase solo publica los cambios de las tablas que estén en esta publicación.
 -- Sin esto, la app se entera de un desafío nuevo recién al recargar la página.
 -- =============================================================================
@@ -1468,12 +1284,6 @@ end $$;
 
 do $$
 begin
-  alter publication supabase_realtime add table public.ladder_members;
-exception when duplicate_object then null;
-end $$;
-
-do $$
-begin
   alter publication supabase_realtime add table public.rating_history;
 exception when duplicate_object then null;
 end $$;
@@ -1483,3 +1293,40 @@ begin
   alter publication supabase_realtime add table public.payments;
 exception when duplicate_object then null;
 end $$;
+
+-- =============================================================================
+-- 12. RETIRO DE LA ESCALERILLA
+-- Va al final a propósito: para cuando esto corre, las funciones de más arriba
+-- ya se reemplazaron por versiones que no nombran nada de la escalerilla, así
+-- que se puede borrar sin que quede una dependencia colgando.
+--
+-- OJO: esto borra de forma definitiva quién estaba inscrito y en qué puesto.
+-- Los partidos, los ratings, las reservas y los cobros no se tocan.
+-- =============================================================================
+drop trigger if exists ladder_close_gap on public.ladder_members;
+drop function if exists public.close_ladder_gap();
+drop function if exists public.join_ladder(text);
+drop function if exists public.leave_ladder(text);
+
+do $$
+begin
+  if exists (select 1 from pg_publication_tables
+              where pubname = 'supabase_realtime'
+                and schemaname = 'public' and tablename = 'ladder_members') then
+    alter publication supabase_realtime drop table public.ladder_members;
+  end if;
+end $$;
+
+drop table if exists public.ladder_members;
+
+alter table public.profiles  drop constraint if exists profiles_ladder_unique;
+alter table public.profiles  drop column if exists ladder_pos;
+alter table public.challenges drop column if exists ladder;
+alter table public.bookings  drop column if exists ladder;
+alter table public.bookings  drop column if exists ladder_defender;
+alter table public.bookings  drop column if exists ladder_applied;
+
+-- Al borrar ladder_pos, Postgres se lleva por delante el indice que lo incluia.
+-- Se rehace solo sobre club_id, que es lo que consulta el directorio.
+drop index if exists public.profiles_club_idx;
+create index profiles_club_idx on public.profiles (club_id);
