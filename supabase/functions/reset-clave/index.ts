@@ -44,9 +44,27 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Solo POST.' }, 405);
 
-  const url = Deno.env.get('SUPABASE_URL')!;
-  const anon = Deno.env.get('SUPABASE_ANON_KEY')!;
-  const servicio = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  // Los proyectos con el sistema de llaves nuevo (sb_publishable_ / sb_secret_)
+  // no siempre traen los nombres viejos, asi que se prueban los dos. Si falta,
+  // conviene que lo diga en vez de fallar despues como si el socio no existiera.
+  const env = (...nombres: string[]) => {
+    for (const n of nombres) {
+      const v = Deno.env.get(n);
+      if (v) return v;
+    }
+    return '';
+  };
+
+  const url = env('SUPABASE_URL');
+  const anon = env('SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY');
+  const servicio = env('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY');
+
+  if (!url || !anon || !servicio) {
+    return json({
+      error: 'Faltan variables de entorno en la funcion.',
+      detalle: { url: !!url, anon: !!anon, servicio: !!servicio },
+    }, 500);
+  }
 
   const auth = req.headers.get('Authorization') ?? '';
   if (!auth) return json({ error: 'Falta la sesion.' }, 401);
@@ -76,7 +94,10 @@ Deno.serve(async (req: Request) => {
     .eq('id', playerId)
     .single();
 
-  if (errSocio || !socio) return json({ error: 'Ese socio no existe.' }, 404);
+  if (errSocio) {
+    return json({ error: 'No pude leer el socio: ' + errSocio.message }, 500);
+  }
+  if (!socio) return json({ error: 'Ese socio no existe.' }, 404);
   if (!socio.member_id) return json({ error: 'Esa cuenta no es de un socio.' }, 400);
   if (!socio.club_id) return json({ error: 'Ese socio no tiene club.' }, 400);
 
