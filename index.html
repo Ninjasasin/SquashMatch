@@ -438,6 +438,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 }
 .rank-item.ausente{opacity:.62}
 .row.atenuada{opacity:.6}
+.entrega{
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;font-size:14px;line-height:1.9;
+}
+.entrega b{display:inline-block;min-width:110px;color:var(--ink-faint);font-weight:600;font-size:12px}
+.entrega code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;
+  color:var(--lime);font-weight:700;letter-spacing:.02em;
+}
 
 .pay-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
 .pay-line .who{font-size:13px;min-width:140px}
@@ -644,27 +653,21 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     </div>
 
     <h2 class="auth-title">Entra a la cancha</h2>
-    <p class="auth-lead">Busca rivales de tu categoría, mándales un desafío y la cancha
-      queda reservada apenas lo aceptan.</p>
+    <p class="auth-lead">Servicio exclusivo para socios del club. Entra con el ID de socio
+      que te entregaron en recepción.</p>
 
-    <div id="authChoices">
-      <button class="btn primary block" data-auth="google">Continuar con Google</button>
-      <button class="btn block" data-auth="correo">Entrar con correo y contraseña</button>
-      <p class="auth-sep">¿Primera vez acá?</p>
-      <button class="btn ghost block" data-auth="registro">Crear una cuenta</button>
-    </div>
-
-    <form id="authForm" hidden autocomplete="off" novalidate>
+    <form id="authForm" autocomplete="off" novalidate>
       <div class="auth-note" id="authNote"></div>
 
       <div class="field" id="fieldEmail">
-        <label for="auEmail">Correo</label>
-        <input id="auEmail" type="email" placeholder="nombre@correo.cl">
+        <label for="auEmail">ID de socio</label>
+        <input id="auEmail" type="text" placeholder="nombre.apellido" autocapitalize="none"
+               spellcheck="false">
       </div>
 
       <div class="field" id="fieldPass">
         <label for="auPass">Contraseña</label>
-        <input id="auPass" type="password" placeholder="Al menos 8 caracteres">
+        <input id="auPass" type="password" placeholder="La que te dieron en recepción">
       </div>
 
       <div class="field" id="fieldName">
@@ -683,12 +686,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         </div>
       </div>
 
-
       <div class="btn-row" style="margin-top:6px">
         <button type="button" class="btn ghost" id="auBack">Volver</button>
-        <button type="submit" class="btn primary" id="auSubmit">Continuar</button>
+        <button type="submit" class="btn primary" id="auSubmit">Entrar</button>
       </div>
     </form>
+
+    <p class="auth-sep">¿No tienes tu ID de socio, o la perdiste?</p>
+    <p class="auth-demo" style="margin:0">Pídela en recepción del club. Las cuentas las
+      crea el club, así que no hay registro por acá ni recuperación por correo.</p>
   </div>
 
   <aside class="auth-side">
@@ -699,9 +705,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <li><b>Subir en el ranking</b> — cada partido confirmado mueve tus puntos, y ganarle a alguien mejor rankeado suma más.</li>
       <li><b>Seguir tus estadísticas</b> — efectividad, rachas, rivales frecuentes y tu historial de partidos.</li>
     </ul>
-    <p class="auth-demo">Tu cuenta y tus partidos quedan guardados en la nube: entras
-      desde cualquier dispositivo y los demás jugadores te ven. Es un prototipo en
-      desarrollo, así que no lo uses todavía para datos que te importen.</p>
+    <p class="auth-demo">Tu club te da el acceso: pides tu ID de socio en recepción y
+      entras desde cualquier dispositivo. Es un prototipo en desarrollo, así que no lo
+      uses todavía para datos que te importen.</p>
   </aside>
 </div>
 
@@ -1023,6 +1029,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <p class="note">Todos los jugadores, para avisarle a uno en particular que hay cancha
           libre o marcarlo para no llamar. Nada de esto lo ve el jugador: los avisos le
           llegan, la marca no.</p>
+        <div class="btn-row" style="margin-bottom:16px">
+          <button class="btn primary" id="btnNuevoSocio">Crear socio</button>
+        </div>
         <div class="filters" style="grid-template-columns:2fr 1fr">
           <div class="field">
             <label for="cjBuscar">Buscar por nombre</label>
@@ -1480,6 +1489,63 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
+<!-- ============ MODAL CREAR SOCIO ============ -->
+<div class="overlay" id="socioModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Crear socio</h2>
+        <p>El RUT es la llave: si el socio ya existe —incluso de años atrás— la base no
+          deja duplicarlo y recupera su historial.</p>
+      </div>
+      <button class="x" data-close="socioModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="two">
+        <div class="field">
+          <label for="scName">Nombre y apellido</label>
+          <input id="scName" type="text" placeholder="Ej: Juan Pérez" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="scRut">RUT</label>
+          <input id="scRut" type="text" placeholder="12.345.678-5" autocomplete="off">
+          <span class="hint" id="scRutHint"></span>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="scPhone">Teléfono</label>
+          <input id="scPhone" type="tel" placeholder="+56 9 …" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="scCat">Categoría</label>
+          <select id="scCat"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="scMember">ID de socio</label>
+        <input id="scMember" type="text" autocomplete="off" spellcheck="false">
+        <span class="hint">Se propone desde el nombre. Se puede cambiar si ya existe.</span>
+      </div>
+      <div class="avail" id="scAvail"></div>
+
+      <div id="scEntrega" hidden>
+        <div class="box" style="margin-bottom:0">
+          <p class="section-title">Entrégale esto al socio</p>
+          <p class="note">La clave la conoce el club, así que el socio tendrá que cambiarla
+            la primera vez que entre. No queda guardada en ninguna parte: si se pierde antes
+            de que entre, hay que crearla de nuevo.</p>
+          <div class="entrega" id="scCreds"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close="socioModal">Cerrar</button>
+      <button class="btn primary" id="scSave">Crear socio</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL AVISAR ============ -->
 <div class="overlay" id="notifyModal">
   <div class="modal">
@@ -1701,6 +1767,8 @@ function mapProfile(row){
     franja:row.preferred_slot || '',
     bio:row.bio || '',
     role:row.role || 'player',
+    memberId:row.member_id || '',
+    mustChangePassword:!!row.must_change_password,
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
 }
@@ -1751,6 +1819,7 @@ function mapInvite(row){
    base. Se piden de mas a menos y se usa la primera que responde, para que la
    app siga andando aunque el esquema vaya un paso atras. */
 const PROFILE_EXTRAS = [
+  ',rating,rating_matches,staff,member_id,must_change_password',
   ',rating,rating_matches,staff',
   ''
 ];
@@ -4557,6 +4626,160 @@ function openChallenge(targetId){
   openModal('challengeModal');
 }
 
+/* =========================================================
+   CREAR SOCIOS
+   ---------------------------------------------------------
+   El club crea la cuenta y le entrega al socio su ID y una clave inicial. El ID
+   es nombre.apellido, y el RUT es la llave que impide duplicados.
+
+   La cuenta de acceso se crea con el registro normal de Supabase, pero desde un
+   cliente aparte: si se usara el de la app, la sesión del club se cambiaría por
+   la del socio recién creado y el administrador quedaría fuera. Ese cliente no
+   guarda sesión, así que no toca la del club.
+   ========================================================= */
+function idDeSocio(nombre){
+  const limpio = String(nombre || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // saca los acentos
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/).filter(Boolean);
+  if(!limpio.length) return '';
+  if(limpio.length === 1) return limpio[0];
+  /* Primera palabra y segunda, no la ultima: en Chile "Juan Perez Gomez" se
+     conoce como Juan Perez, no Juan Gomez. Con nombres compuestos —"Maria Jose
+     Contreras"— sale maria.jose y el club lo corrige a mano; es el caso menos
+     frecuente de los dos. */
+  return limpio[0] + '.' + limpio[1];
+}
+
+/** Normaliza igual que la base: sin puntos, sin guion, K en mayúscula. */
+function normalizarRut(rut){
+  return String(rut || '').toUpperCase().replace(/[^0-9K]/g, '');
+}
+
+/** Dígito verificador por módulo 11, para atrapar el dedazo al escribirlo. */
+function rutValido(rut){
+  const limpio = normalizarRut(rut);
+  if(limpio.length < 2) return false;
+  const cuerpo = limpio.slice(0, -1), dv = limpio.slice(-1);
+  if(!/^[0-9]+$/.test(cuerpo)) return false;
+  let suma = 0, factor = 2;
+  for(let i = cuerpo.length - 1; i >= 0; i--){
+    suma += parseInt(cuerpo[i], 10) * factor;
+    factor = factor === 7 ? 2 : factor + 1;
+  }
+  const resto = 11 - (suma % 11);
+  const esperado = resto === 11 ? '0' : (resto === 10 ? 'K' : String(resto));
+  return dv === esperado;
+}
+
+function formatearRut(rut){
+  const limpio = normalizarRut(rut);
+  if(limpio.length < 2) return limpio;
+  const cuerpo = limpio.slice(0, -1), dv = limpio.slice(-1);
+  return cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv;
+}
+
+/* Clave inicial legible: la va a dictar alguien en un mostrador y la va a
+   escribir alguien en un teléfono, así que sin caracteres que se confundan
+   —ni O ni 0, ni l ni 1— y en dos bloques cortos. */
+function claveInicial(){
+  const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const num = '23456789';
+  let out = '';
+  for(let i = 0; i < 4; i++) out += abc[Math.floor(Math.random() * abc.length)];
+  out += '-';
+  for(let i = 0; i < 4; i++) out += num[Math.floor(Math.random() * num.length)];
+  return out;
+}
+
+/* Cliente aparte, sin sesión persistente, solo para registrar al socio nuevo
+   sin desloguear al club. */
+let sbAlta = null;
+function clienteDeAlta(){
+  if(!sbAlta){
+    sbAlta = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth:{ persistSession:false, autoRefreshToken:false, storageKey:'sm-alta' }
+    });
+  }
+  return sbAlta;
+}
+
+async function crearSocio(clubId, datos){
+  const correo = datos.memberId + '@' + DOMINIO_SOCIO;
+  const clave  = claveInicial();
+
+  const alta = await clienteDeAlta().auth.signUp({
+    email:correo, password:clave,
+    options:{ data:{ full_name:datos.name } }
+  });
+  if(alta.error){
+    return { ok:false, reason:alta.error.message.indexOf('already registered') > -1
+      ? 'Ese ID de socio ya está usado. Prueba con otro.'
+      : alta.error.message };
+  }
+  const userId = alta.data.user && alta.data.user.id;
+  if(!userId) return { ok:false, reason:'No pude crear la cuenta de acceso.' };
+
+  const res = await sb.rpc('club_crear_socio', {
+    p_user:userId, p_club:clubId, p_member:datos.memberId, p_rut:datos.rut,
+    p_name:datos.name, p_phone:datos.phone, p_category:datos.category
+  });
+  if(res.error) return { ok:false, reason:res.error.message };
+
+  await refresh();
+  return { ok:true, memberId:datos.memberId, clave:clave };
+}
+
+function openSocio(){
+  ['scName','scRut','scPhone','scMember'].forEach(function(id){ $(id).value = ''; });
+  $('scCat').value = CATEGORIES[0];
+  $('scRutHint').textContent = '';
+  $('scEntrega').hidden = true;
+  $('scAvail').className = 'avail';
+  $('scAvail').textContent = '';
+  $('scSave').hidden = false;
+  $('scSave').textContent = 'Crear socio';
+  openModal('socioModal');
+  setTimeout(function(){ $('scName').focus(); }, 40);
+}
+
+/* El RUT se revisa mientras se escribe: si ya es socio, mostrar de quién es en
+   vez de un error seco. Si solo dijera "RUT duplicado", la recepción va a
+   inventar un RUT falso para poder seguir. */
+async function revisarRut(){
+  const rut = $('scRut').value;
+  const box = $('scAvail');
+  if(normalizarRut(rut).length < 2){ box.className = 'avail'; box.textContent = ''; return; }
+
+  if(!rutValido(rut)){
+    $('scRutHint').textContent = '';
+    box.className = 'avail bad';
+    box.textContent = '✕ Ese RUT no cuadra: revisa el número y el dígito verificador.';
+    return;
+  }
+  $('scRutHint').textContent = formatearRut(rut);
+
+  // Se limpia antes de preguntar: si no, el error del RUT anterior queda a la
+  // vista mientras la consulta viaja y parece que este tambien esta mal.
+  box.className = 'avail';
+  box.textContent = 'Revisando si ya es socio...';
+
+  const res = await sb.rpc('socio_por_rut', { p_club:$('clClub').value, p_rut:rut });
+  if(res.error){ box.className = 'avail'; box.textContent = ''; return; }
+
+  if(res.data && res.data.length){
+    const y = res.data[0];
+    box.className = 'avail bad';
+    box.textContent = '✕ Ese RUT ya es socio: ' + y.name +
+      (y.member_id ? ' (' + y.member_id + ')' : '') +
+      (y.last_played ? ' · última vez que jugó el ' + fmtDate(y.last_played) : ' · sin partidos') +
+      '. No hace falta crearlo de nuevo.';
+  } else {
+    box.className = 'avail ok';
+    box.textContent = '✓ RUT libre.';
+  }
+}
+
 /* Avisarle a un jugador que hay una cancha libre en el bloque en que suele
    jugar. Es la otra mitad de la lista de llamados: en vez de telefonear, el
    aviso le llega dentro de la app con la acción para tomarlo. */
@@ -4762,12 +4985,17 @@ function showApp(){
 }
 
 /* ---------- Entrada y salida ---------- */
-async function signInWithGoogle(){
-  const { error } = await sb.auth.signInWithOAuth({
-    provider:'google',
-    options:{ redirectTo: location.origin + location.pathname }
-  });
-  if(error) toast('No pude abrir el acceso con Google: ' + error.message, true);
+/* El socio entra con su ID —nombre.apellido— y no con un correo. Por dentro
+   Supabase igual necesita uno, así que se arma con el ID y un dominio interno
+   que el jugador no ve nunca. Al ser el ID único, el correo también lo es.
+
+   Si lo que escriben lleva arroba se usa tal cual: así siguen entrando las
+   cuentas viejas y la del club, que se crearon con correo de verdad. */
+const DOMINIO_SOCIO = 'socio.squashmatch.app';
+
+function correoDeAcceso(entrada){
+  const v = String(entrada || '').trim().toLowerCase();
+  return v.indexOf('@') > -1 ? v : (v ? v + '@' + DOMINIO_SOCIO : '');
 }
 
 async function logout(){
@@ -4792,6 +5020,17 @@ async function enterApp(session){
     return;
   }
 
+  /* La clave con que entró se la dio recepción, así que el club la conoce. No se
+     deja pasar sin cambiarla: si no, cualquiera del mostrador puede entrar a la
+     cuenta de un socio. */
+  if(me() && me().mustChangePassword){
+    startAuth('clave');
+    $('authScreen').classList.add('open');
+    document.querySelector('.topbar').hidden = true;
+    document.querySelector('main').hidden = true;
+    return;
+  }
+
   if(!profileComplete(me())){
     startAuth('perfil');
     $('authScreen').classList.add('open');
@@ -4804,9 +5043,7 @@ async function enterApp(session){
 
 /* ---------- Formulario ---------- */
 function authReset(){
-  authMode = null;
-  $('authChoices').hidden = false;
-  $('authForm').hidden = true;
+  startAuth('correo');
   ['auEmail','auPass','auName'].forEach(function(id){ $(id).value = ''; });
 }
 
@@ -4819,24 +5056,25 @@ function authShowFields(opts){
 }
 
 function startAuth(mode){
-  if(mode === 'google'){ signInWithGoogle(); return; }
-
   authMode = mode;
-  $('authChoices').hidden = true;
   $('authForm').hidden = false;
 
   if(mode === 'correo'){
-    authShowFields({ email:true, pass:true });
-    $('authNote').innerHTML = 'Entra con el correo y la contrase&ntilde;a con que te registraste.';
+    authShowFields({ email:true, pass:true, noBack:true });
+    $('authNote').innerHTML = 'Tu ID de socio es tu nombre y apellido separados por un punto, ' +
+      'por ejemplo <b>juan.perez</b>.';
     $('auSubmit').textContent = 'Entrar';
     setTimeout(function(){ $('auEmail').focus(); }, 30);
 
-  } else if(mode === 'registro'){
-    authShowFields({ email:true, pass:true, name:true });
-    $('authNote').innerHTML = '<b>Cuenta nueva.</b> La contrase&ntilde;a se guarda cifrada en el ' +
-      'servidor, nunca en tu navegador. En el paso siguiente eliges categor&iacute;a y club.';
-    $('auSubmit').textContent = 'Crear cuenta';
-    setTimeout(function(){ $('auEmail').focus(); }, 30);
+  } else if(mode === 'clave'){
+    // Primera entrada: la clave que dio recepción se cambia antes de seguir.
+    authShowFields({ pass:true, noBack:true });
+    $('auPass').value = '';
+    $('auPass').placeholder = 'Tu clave nueva, mínimo 8 caracteres';
+    $('authNote').innerHTML = '<b>Elige tu contrase&ntilde;a.</b> La que te dieron en recepci&oacute;n ' +
+      'la conoce el club: cambiala por una tuya para que nadie m&aacute;s pueda entrar a tu cuenta.';
+    $('auSubmit').textContent = 'Guardar y entrar';
+    setTimeout(function(){ $('auPass').focus(); }, 30);
 
   } else if(mode === 'perfil'){
     authShowFields({ name:true, profile:true, noBack:true });
@@ -4870,42 +5108,42 @@ async function submitAuth(){
       return;
     }
 
-    const email = $('auEmail').value.trim();
+    /* --- Cambio de clave en la primera entrada --- */
+    if(authMode === 'clave'){
+      const nueva = $('auPass').value;
+      if(nueva.length < 8){
+        toast('La clave nueva debe tener al menos 8 caracteres.', true); return;
+      }
+      const upd = await sb.auth.updateUser({ password:nueva });
+      if(upd.error){ toast(upd.error.message, true); return; }
+
+      await sb.from('profiles').update({ must_change_password:false }).eq('id', state.meId);
+      await fetchAll();
+
+      if(!profileComplete(me())){ startAuth('perfil'); return; }
+      showApp();
+      toast('Clave guardada. Ya estás dentro.');
+      return;
+    }
+
+    const email = correoDeAcceso($('auEmail').value);
     const pass  = $('auPass').value;
-    if(!EMAIL_RE.test(email)){ toast('Escribe un correo valido.', true); return; }
-    if(pass.length < 8){ toast('La contrase\u00f1a debe tener al menos 8 caracteres.', true); return; }
+    if(!EMAIL_RE.test(email)){ toast('Escribe tu ID de socio.', true); return; }
+    if(!pass){ toast('Escribe tu contraseña.', true); return; }
 
     /* --- Entrar --- */
     if(authMode === 'correo'){
       const res = await sb.auth.signInWithPassword({ email:email, password:pass });
       if(res.error){
         toast(res.error.message === 'Invalid login credentials'
-          ? 'Correo o contrase\u00f1a incorrectos.' : res.error.message, true);
+          ? 'ID de socio o contraseña incorrectos.' : res.error.message, true);
         return;
       }
       await enterApp(res.data.session);
       const yo = me();
-      if(yo && profileComplete(yo)) toast('Hola de nuevo, ' + yo.name.split(' ')[0] + '.');
-      return;
-    }
-
-    /* --- Registrarse --- */
-    if(authMode === 'registro'){
-      const name = $('auName').value.trim();
-      if(name.length < 3){ toast('Escribe tu nombre completo.', true); return; }
-
-      const res = await sb.auth.signUp({
-        email:email, password:pass,
-        options:{ data:{ full_name:name }, emailRedirectTo: location.origin + location.pathname }
-      });
-      if(res.error){ toast(res.error.message, true); return; }
-
-      if(!res.data.session){
-        toast('Te enviamos un correo para confirmar la cuenta. Abrelo y vuelve a entrar.');
-        authReset();
-        return;
+      if(yo && !yo.mustChangePassword && profileComplete(yo)){
+        toast('Hola de nuevo, ' + yo.name.split(' ')[0] + '.');
       }
-      await enterApp(res.data.session);
       return;
     }
   } finally {
@@ -5047,6 +5285,7 @@ function initControls(){
   fillSelect($('auCat'), catOptions(), null, null);
   fillSelect($('oCat'), catOptions(), 'Todas las categorías', 'todas');
   fillSelect($('ivCat'), catOptions(), 'Cualquiera', '');
+  fillSelect($('scCat'), catOptions(), null, null);
 
   const t = todayISO(), mx = maxISO();
   ['chDate','cDate','ivDate'].forEach(function(id){
@@ -5083,10 +5322,6 @@ function activateProfilePane(pane){
 
 function bindEvents(){
   // Pantalla de entrada
-  $('authChoices').addEventListener('click', function(e){
-    const b = e.target.closest('[data-auth]');
-    if(b) startAuth(b.dataset.auth);
-  });
   $('authForm').addEventListener('submit', function(e){
     e.preventDefault();
     submitAuth();
@@ -5346,6 +5581,43 @@ function bindEvents(){
     challengeCourt = parseInt(b.dataset.court, 10);
     updateAvail();
   });
+  // Crear socio
+  $('btnNuevoSocio').addEventListener('click', openSocio);
+  $('scName').addEventListener('input', function(){
+    // El ID se propone solo, pero si el club lo editó a mano no se le pisa.
+    if(!$('scMember').dataset.tocado) $('scMember').value = idDeSocio(this.value);
+  });
+  $('scMember').addEventListener('input', function(){ this.dataset.tocado = '1'; });
+  $('scRut').addEventListener('input', revisarRut);
+  $('scSave').addEventListener('click', async function(){
+    const nombre = $('scName').value.trim();
+    const memberId = $('scMember').value.trim().toLowerCase();
+    if(nombre.length < 3){ toast('Escribe el nombre completo del socio.', true); return; }
+    if(!/^[a-z0-9.]{3,40}$/.test(memberId)){
+      toast('El ID de socio solo admite letras, números y puntos.', true); return;
+    }
+    if(!rutValido($('scRut').value)){
+      toast('Revisa el RUT: el dígito verificador no cuadra.', true); return;
+    }
+
+    this.disabled = true;
+    const res = await crearSocio($('clClub').value, {
+      memberId:memberId, rut:$('scRut').value, name:nombre,
+      phone:$('scPhone').value.trim(), category:$('scCat').value
+    });
+    this.disabled = false;
+    if(!res.ok){ toast(res.reason, true); return; }
+
+    $('scCreds').innerHTML =
+      '<div><b>ID de socio</b> <code>' + esc(res.memberId) + '</code></div>' +
+      '<div><b>Clave inicial</b> <code>' + esc(res.clave) + '</code></div>';
+    $('scEntrega').hidden = false;
+    $('scAvail').className = 'avail ok';
+    $('scAvail').textContent = '✓ Socio creado.';
+    $('scSave').hidden = true;
+    renderClubPlayers($('clClub').value);
+  });
+
   // Avisar
   ['nfDate','nfTime','nfCourt'].forEach(function(id){
     $(id).addEventListener('input', componerAviso);

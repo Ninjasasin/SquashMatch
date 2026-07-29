@@ -79,7 +79,90 @@ alter table public.profiles
   add column if not exists staff boolean not null default false;
 
 
+-- =============================================================================
+-- SOCIOS DEL CLUB
+-- El servicio es para los socios, y las cuentas las crea el club: el jugador
+-- pasa por recepción, le entregan su ID de socio y con eso entra. No hay
+-- registro público.
+--
+-- Esto resuelve de una vez la adopción —el socio ya está adentro, no hay que
+-- convencerlo de registrarse— y la calidad de los datos, porque los escribe el
+-- club y no cada uno como quiere.
+--
+-- member_id es nombre.apellido, y es lo que el jugador escribe para entrar.
+-- rut es la llave que impide duplicados: si un socio se va y vuelve al año, la
+-- base no deja crearlo de nuevo y recupera su historial y su rating.
+-- =============================================================================
+alter table public.profiles
+  add column if not exists member_id text,
+  add column if not exists rut       text,
+  add column if not exists must_change_password boolean not null default false,
+  add column if not exists created_by uuid references public.profiles(id) on delete set null;
+
+-- Únicos, pero solo cuando hay valor: las cuentas de club no tienen ni ID de
+-- socio ni RUT, y varios nulos no pueden chocar entre sí.
+create unique index if not exists profiles_member_id_unique
+  on public.profiles (member_id) where member_id is not null;
+
+create unique index if not exists profiles_rut_unique
+  on public.profiles (rut) where rut is not null;
+
 create index if not exists profiles_club_idx on public.profiles (club_id);
+
+-- El RUT se guarda normalizado —sin puntos ni guion, K en mayúscula— porque si
+-- no, 12.345.678-5 y 123456785 son dos filas distintas y la llave única no
+-- sirve para nada. Esta es la parte que hay que hacer bien o el candado no cierra.
+create or replace function public.normalizar_rut(p_rut text)
+returns text
+language sql
+immutable
+as $$
+  select nullif(upper(regexp_replace(coalesce(p_rut, ''), '[^0-9kK]', '', 'g')), '');
+$$;
+
+-- Dígito verificador por módulo 11. Sin esto, un dedazo en recepción crea un
+-- socio fantasma que después nadie puede unir con el real.
+create or replace function public.rut_valido(p_rut text)
+returns boolean
+language plpgsql
+immutable
+as $$
+declare
+  limpio  text := public.normalizar_rut(p_rut);
+  cuerpo  text;
+  dv      text;
+  suma    int := 0;
+  factor  int := 2;
+  i       int;
+  resto   int;
+  esperado text;
+begin
+  if limpio is null or length(limpio) < 2 then
+    return false;
+  end if;
+  cuerpo := left(limpio, length(limpio) - 1);
+  dv     := right(limpio, 1);
+  if cuerpo !~ '^[0-9]+$' then
+    return false;
+  end if;
+
+  for i in reverse length(cuerpo)..1 loop
+    suma := suma + (substr(cuerpo, i, 1))::int * factor;
+    factor := case when factor = 7 then 2 else factor + 1 end;
+  end loop;
+
+  resto := 11 - (suma % 11);
+  esperado := case resto when 11 then '0' when 10 then 'K' else resto::text end;
+  return dv = esperado;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_rut_chk') then
+    alter table public.profiles add constraint profiles_rut_chk
+      check (rut is null or public.rut_valido(rut));
+  end if;
+end $$;
 
 -- =============================================================================
 -- 3. DESAFÍOS
@@ -258,11 +341,11 @@ revoke select on public.profiles from authenticated;
 grant select (
   id, name, category, national_rank, club_id, hand, comuna,
   playing_since, available_days, preferred_slot, bio, role, created_at,
-  rating, rating_matches, staff
+  rating, rating_matches, staff, member_id, must_change_password
 ) on public.profiles to authenticated;
 grant update (
   name, category, national_rank, club_id, hand, phone, comuna,
-  playing_since, available_days, preferred_slot, bio
+  playing_since, available_days, preferred_slot, bio, must_change_password
 ) on public.profiles to authenticated;
 
 -- Contacto del rival: solo si hay una reserva confirmada entre ambos.
@@ -897,6 +980,106 @@ as $$
 $$;
 
 grant execute on function public.is_club_admin(text) to authenticated;
+
+-- =============================================================================
+-- CREACIÓN DE SOCIOS
+-- La cuenta de acceso la crea el navegador del club con el registro normal de
+-- Supabase, y después llama a esto para completar la ficha. Va por función y no
+-- por un grant de update porque el club está escribiendo en la fila de OTRA
+-- persona, y eso no puede quedar abierto.
+--
+-- El RUT no se entrega en el SELECT general: es dato personal y no tiene por qué
+-- verlo otro jugador. Para saber si un RUT ya existe está socio_por_rut(), que
+-- devuelve a quién pertenece sin exponer el número de nadie más.
+-- =============================================================================
+create or replace function public.club_crear_socio(
+  p_user     uuid,
+  p_club     text,
+  p_member   text,
+  p_rut      text,
+  p_name     text,
+  p_phone    text,
+  p_category text
+)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  limpio text := public.normalizar_rut(p_rut);
+  fila   public.profiles;
+begin
+  if not public.is_club_admin(p_club) then
+    raise exception 'Solo el administrador del club puede crear socios.';
+  end if;
+  if btrim(coalesce(p_name, '')) = '' then
+    raise exception 'El socio necesita nombre.';
+  end if;
+  if btrim(coalesce(p_member, '')) = '' then
+    raise exception 'El socio necesita un ID.';
+  end if;
+  if limpio is null or not public.rut_valido(limpio) then
+    raise exception 'Ese RUT no es valido. Revisa el numero y el digito verificador.';
+  end if;
+
+  -- Mensaje util en vez de un choque de indice: la recepcion tiene que entender
+  -- que el socio ya existe, o va a inventar un RUT falso para poder seguir.
+  if exists (select 1 from public.profiles where rut = limpio and id <> p_user) then
+    raise exception 'Ese RUT ya esta registrado como socio.';
+  end if;
+  if exists (select 1 from public.profiles where member_id = p_member and id <> p_user) then
+    raise exception 'Ese ID de socio ya esta usado.';
+  end if;
+
+  update public.profiles
+     set name      = btrim(p_name),
+         member_id = p_member,
+         rut       = limpio,
+         phone     = coalesce(p_phone, ''),
+         category  = p_category,
+         club_id   = p_club,
+         must_change_password = true,
+         created_by = auth.uid()
+   where id = p_user
+  returning * into fila;
+
+  if fila is null then
+    raise exception 'No encontre la cuenta recien creada.';
+  end if;
+  return fila;
+end $$;
+
+grant execute on function public.club_crear_socio(uuid, text, text, text, text, text, text)
+  to authenticated;
+
+-- ¿Ese RUT ya es socio? Devuelve a quién pertenece, sin entregar el RUT de nadie.
+create or replace function public.socio_por_rut(p_club text, p_rut text)
+returns table (id uuid, name text, member_id text, club_id text, last_played date)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_club_admin(p_club) then
+    raise exception 'Solo el administrador del club puede consultar socios.';
+  end if;
+
+  return query
+    select p.id, p.name, p.member_id, p.club_id,
+           (select max(b.match_date) from public.bookings b
+             where b.status = 'confirmada'
+               and (b.player_a = p.id or b.player_b = p.id)) as last_played
+      from public.profiles p
+     where p.rut = public.normalizar_rut(p_rut);
+end $$;
+
+grant execute on function public.socio_por_rut(text, text) to authenticated;
+
+-- Resetear la clave de un socio que la perdió NO se puede hacer desde el
+-- navegador: cambiar la contraseña de otra persona necesita la llave de
+-- administración de Supabase, que no puede vivir en el código de la app. Queda
+-- pendiente y se resuelve con una Edge Function.
 
 -- =============================================================================
 -- NO LLAMAR
