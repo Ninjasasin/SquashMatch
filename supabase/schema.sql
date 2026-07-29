@@ -102,6 +102,14 @@ create table if not exists public.challenges (
   constraint challenges_distinct_players check (from_id <> to_id)
 );
 
+-- El check de status venia escrito dentro del create table, y en una base que ya
+-- existia ese create no corre: por eso agregar 'contrapropuesta' arriba no bastaba
+-- y la base seguia rechazando el estado nuevo. Se reemplaza explicito.
+alter table public.challenges drop constraint if exists challenges_status_check;
+alter table public.challenges add constraint challenges_status_check
+  check (status in ('pendiente','contrapropuesta','aceptada',
+                    'rechazada','cancelada','caducada'));
+
 -- Contrapropuesta: el desafiado no dice que no, dice "ese día no, pero el
 -- jueves sí". match_date y match_time pasan a ser los del horario nuevo —así
 -- accept_challenge no necesita saber nada de esto— y counter_of_* guarda el

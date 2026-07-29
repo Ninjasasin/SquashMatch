@@ -14,8 +14,11 @@
 
 -- Desafíos creados para probar (el texto los delata). Al borrarlos, las reservas
 -- que salieron de ellos se conservan: quedan como partidos agendados normales.
+-- counter_msg va en el filtro porque una contrapropuesta de prueba puede llevar
+-- el texto delator solo en la respuesta y no en el desafío original.
 delete from public.challenges
- where message ~* '(auditor|prueba|vencido|vigente|canal|revancha del|jugamos el domingo)';
+ where message ~* '(auditor|prueba|vencido|vigente|canal|revancha del|jugamos el domingo)'
+    or counter_msg ~* '(auditor|prueba|no puedo tan temprano)';
 
 -- Publicaciones de canchas abiertas hechas para probar.
 delete from public.open_invites
@@ -27,13 +30,29 @@ delete from public.bookings
  where source = 'club'
    and status = 'cancelada';
 
+-- Reservas de la app canceladas durante las pruebas, sin resultado cargado.
+-- Solo las de estos últimos días: las canceladas viejas son historia real.
+delete from public.bookings
+ where source = 'app'
+   and status = 'cancelada'
+   and result_status = 'sin_resultado'
+   and created_at > now() - interval '3 days';
+
+-- Avisos del club mandados para probar.
+delete from public.club_messages
+ where body ~* '(auditor|prueba)';
+
+-- Marcas de "no llamar" puestas para probar.
+delete from public.player_flags
+ where note ~* '(auditor|prueba|rotura de fibras)';
+
 -- Restos de texto de prueba en las biografías de los perfiles.
 update public.profiles
    set bio = ''
  where bio ~* '(audit|prueba de|test )';
 
 -- -----------------------------------------------------------------------------
--- Comprobación: las tres consultas deberían devolver 0.
+-- Comprobación: todas las consultas deberían devolver 0.
 -- -----------------------------------------------------------------------------
 select 'desafíos de prueba' as que, count(*) as quedan
   from public.challenges
@@ -45,4 +64,12 @@ select 'publicaciones de prueba', count(*)
 union all
 select 'notas de prueba en reservas', count(*)
   from public.bookings
- where club_note ~* '(auditor|prueba)';
+ where club_note ~* '(auditor|prueba)'
+union all
+select 'avisos de prueba', count(*)
+  from public.club_messages
+ where body ~* '(auditor|prueba)'
+union all
+select 'marcas de prueba', count(*)
+  from public.player_flags
+ where note ~* '(auditor|prueba|rotura de fibras)';

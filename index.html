@@ -3890,7 +3890,7 @@ function buildNotifications(){
         (a.court ? ' · cancha ' + a.court : '')
       : (c ? c.name : '');
     list.push({
-      tone:'hot', when:a.createdAt,
+      prio:0, tone:'hot', when:a.createdAt,
       title:(c ? c.name : 'El club') + ' te avisó',
       sub:a.body + (cuando ? ' — ' + cuando : ''),
       actions:'<div class="btn-row">' +
@@ -3995,6 +3995,13 @@ function buildNotifications(){
 
   return list
     .sort(function(a,b){
+      /* Los avisos del club van arriba de todo: son una oferta que se vence
+         —la cancha se la lleva otro— y no las repite ninguna otra pantalla.
+         Ordenar solo por tono no alcanzaba: el recordatorio de pago también es
+         "hot" y, siendo más reciente, le ganaba. */
+      // Con || el cero se pierde, que es justo la prioridad más alta.
+      const pa = a.prio == null ? 1 : a.prio, pb = b.prio == null ? 1 : b.prio;
+      if(pa !== pb) return pa - pb;
       const hotA = a.tone === 'hot' ? 0 : 1, hotB = b.tone === 'hot' ? 0 : 1;
       if(hotA !== hotB) return hotA - hotB;
       return b.when - a.when;
