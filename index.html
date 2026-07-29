@@ -407,6 +407,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   border:1px dashed var(--line);border-radius:var(--radius);
   padding:11px 15px;font-size:13px;color:var(--ink-faint);
 }
+.chip.away{
+  background:rgba(255,138,61,.14);border-color:rgba(255,138,61,.42);color:var(--amber);
+  font-weight:700;
+}
+.rank-item.ausente{opacity:.62}
+
 .pay-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
 .pay-line .who{font-size:13px;min-width:140px}
 .money{font-variant-numeric:tabular-nums;font-weight:700}
@@ -936,6 +942,44 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         </div>
       </div>
 
+      <div class="box">
+        <p class="section-title">Fuera de las canchas</p>
+        <p class="note">Si estás lesionado o de viaje, márcalo acá. Mientras dure, tu ficha
+          lo muestra, nadie te puede desafiar y el club te saca de las listas desde las que
+          ofrece canchas, así no te llaman todos los días. Al pasar la fecha de término
+          vuelves solo.</p>
+
+        <div class="filters" style="grid-template-columns:1fr 1fr">
+          <div class="field">
+            <label for="cfAway">Estado</label>
+            <select id="cfAway">
+              <option value="">Disponible para jugar</option>
+              <option value="lesion">Lesionado</option>
+              <option value="vacaciones">De vacaciones</option>
+              <option value="otro">No disponible &middot; otro motivo</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="cfAwayNote">Detalle (opcional)</label>
+            <input id="cfAwayNote" type="text" maxlength="60" autocomplete="off"
+                   placeholder="Ej: rotura de fibras">
+          </div>
+        </div>
+
+        <div class="filters" style="grid-template-columns:1fr 1fr" id="cfAwayFechas">
+          <div class="field">
+            <label for="cfAwayFrom">Desde</label>
+            <input id="cfAwayFrom" type="date">
+            <span class="hint">En blanco, empieza hoy.</span>
+          </div>
+          <div class="field">
+            <label for="cfAwayUntil">Hasta</label>
+            <input id="cfAwayUntil" type="date">
+            <span class="hint">En blanco, sigue hasta que lo cambies.</span>
+          </div>
+        </div>
+      </div>
+
       <div class="save-bar">
         <span class="hint" id="cfStatus"></span>
         <button class="btn ghost" id="cfReset">Descartar cambios</button>
@@ -1460,6 +1504,10 @@ function mapProfile(row){
     franja:row.preferred_slot || '',
     bio:row.bio || '',
     role:row.role || 'player',
+    awayReason:row.away_reason || '',
+    awayNote:row.away_note || '',
+    awayFrom:row.away_from || '',
+    awayUntil:row.away_until || '',
     createdAt:row.created_at ? new Date(row.created_at).getTime() : 0
   };
 }
@@ -1504,11 +1552,26 @@ function mapInvite(row){
 
 /* El rating llegó después que el resto: si la base todavía no tiene esas
    columnas, se piden los perfiles sin ellas y la app sigue funcionando. */
+/* Las columnas que agrega cada esquema nuevo pueden no existir todavia en la
+   base. Se piden de mas a menos y se usa la primera que responde, para que la
+   app siga andando aunque el esquema vaya un paso atras. */
+let hayAusencia = false;   // la base ya tiene las columnas de ausencia
+
+const PROFILE_EXTRAS = [
+  ',rating,rating_matches,staff,away_reason,away_note,away_from,away_until',
+  ',rating,rating_matches,staff',
+  ''
+];
+
 async function fetchProfiles(){
-  const conRating = await sb.from('profiles').select(PROFILE_COLS + ',rating,rating_matches,staff');
-  if(!conRating.error) return conRating;
-  console.warn('Rating no disponible:', conRating.error.message);
-  return await sb.from('profiles').select(PROFILE_COLS);
+  let ultima = null;
+  for(let i = 0; i < PROFILE_EXTRAS.length; i++){
+    const r = await sb.from('profiles').select(PROFILE_COLS + PROFILE_EXTRAS[i]);
+    if(!r.error){ hayAusencia = i === 0; return r; }
+    ultima = r;
+    console.warn('Columnas de perfil no disponibles, reintento:', r.error.message);
+  }
+  return ultima;
 }
 
 async function fetchAll(){
@@ -1838,6 +1901,44 @@ function statsOf(playerId){
 }
 
 /* =========================================================
+   FUERA DE LAS CANCHAS
+   ---------------------------------------------------------
+   Un jugador se marca lesionado, de vacaciones o no disponible por otro motivo,
+   con la ventana de fechas en que dura. Existe por un problema concreto que
+   contó el club: a un lesionado lo llamaban todos los días para ofrecerle
+   cancha y el jugador terminaba molesto de repetir lo mismo.
+
+   La ventana es lo que hace que esto no se pudra: al pasar la fecha de término
+   el jugador vuelve solo, sin que nadie tenga que acordarse de destildarlo.
+   ========================================================= */
+const MOTIVOS_AUSENCIA = {
+  lesion:     'Lesionado',
+  vacaciones: 'De vacaciones',
+  otro:       'No disponible'
+};
+
+/** Ausencia vigente hoy, o null si el jugador está disponible. */
+function ausenciaDe(p){
+  if(!p || !p.awayReason) return null;
+  const hoy = todayISO();
+  if(p.awayFrom  && hoy < p.awayFrom)  return null;   // todavía no empieza
+  if(p.awayUntil && hoy > p.awayUntil) return null;   // ya terminó
+  return {
+    motivo:p.awayReason,
+    titulo:MOTIVOS_AUSENCIA[p.awayReason] || 'No disponible',
+    nota:p.awayNote || '',
+    hasta:p.awayUntil || ''
+  };
+}
+
+/** Una línea con el motivo y hasta cuándo, para mostrar junto al nombre. */
+function ausenciaTexto(a){
+  return a.titulo +
+    (a.hasta ? ' hasta el ' + fmtDate(a.hasta) : '') +
+    (a.nota ? ' · ' + a.nota : '');
+}
+
+/* =========================================================
    ACCIONES
    ========================================================= */
 /* Las validaciones del cliente son para la interfaz: avisan temprano y evitan
@@ -1845,6 +1946,13 @@ function statsOf(playerId){
    accept_challenge() antes de reservar. */
 async function sendRequest(toId, clubId, date, time, msg, court){
   const fromId = me().id;
+
+  const rival = player(toId);
+  const aus = ausenciaDe(rival);
+  if(aus){
+    return { ok:false, reason:(rival.name.split(' ')[0]) + ' está fuera de las canchas: ' +
+             ausenciaTexto(aus).toLowerCase() + '.' };
+  }
 
   const check = checkSlot(clubId, date, time, fromId, toId, court);
   if(!check.ok) return { ok:false, reason:check.reason };
@@ -2109,6 +2217,7 @@ function renderPlayers(){
     const c = club(p.clubId);
     const st = statsOf(p.id);
     const isMe = p.id === yo.id;
+    const aus = ausenciaDe(p);
     const pend = requestsLive().some(function(r){
       return r.status === 'pendiente' &&
         ((r.fromId === yo.id && r.toId === p.id) || (r.fromId === p.id && r.toId === yo.id));
@@ -2126,7 +2235,9 @@ function renderPlayers(){
       '<div class="chips">' +
         '<span class="chip cat">'+esc(p.category)+'</span>' +
         '<span class="chip">'+esc(p.hand||'Diestro')+'</span>' +
-        (availabilityText(p) ? '<span class="chip">'+esc(availabilityText(p))+'</span>' : '') +
+        (aus
+          ? '<span class="chip away">'+esc(ausenciaTexto(aus))+'</span>'
+          : (availabilityText(p) ? '<span class="chip">'+esc(availabilityText(p))+'</span>' : '')) +
       '</div>' +
       '<div class="stats">' +
         '<span>PJ <b>'+st.played+'</b></span>' +
@@ -2135,7 +2246,9 @@ function renderPlayers(){
       '</div>' +
       (isMe
         ? '<button class="btn block" disabled>Este eres tú</button>'
-        : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
+        : aus
+          ? '<button class="btn block" disabled>'+esc(aus.titulo)+'</button>'
+          : '<button class="btn primary block" data-challenge="'+p.id+'">'+(pend ? 'Desafío pendiente · enviar otro' : 'Desafiar')+'</button>') +
     '</article>';
   }).join('');
 }
@@ -2815,18 +2928,22 @@ function renderVentana(clubId, dias){
     '<div class="rank-list">' + visibles.map(function(x, i){
       const j = player(x.id);
       const disp = j ? availabilityText(j) : '';
+      const aus = ausenciaDe(j);
       const dias_ = x.ultima ? diasDesde(x.ultima) : null;
-      return '<div class="rank-item">' +
+      return '<div class="rank-item' + (aus ? ' ausente' : '') + '">' +
         '<div class="avatar' + (i === 0 ? '' : ' alt') + '">' +
           esc(initials(j ? j.name : '?')) + '</div>' +
         '<div class="grow">' +
           '<div>' + esc(j ? j.name : 'Jugador') +
-            (j && j.category ? ' <span class="chip cat">' + esc(j.category) + '</span>' : '') + '</div>' +
+            (j && j.category ? ' <span class="chip cat">' + esc(j.category) + '</span>' : '') +
+            (aus ? ' <span class="chip away">no llamar · ' + esc(aus.titulo.toLowerCase()) +
+                   (aus.hasta ? ' hasta el ' + esc(fmtDate(aus.hasta)) : '') + '</span>' : '') + '</div>' +
           '<small>' + x.partidos + (x.partidos === 1 ? ' partido' : ' partidos') +
             ' en este horario' +
             (dias_ === null ? '' : ' · última vez ' + (dias_ === 0 ? 'hoy' : 'hace ' + dias_ +
               (dias_ === 1 ? ' día' : ' días'))) +
-            (disp ? ' · puede ' + esc(disp) : '') + '</small>' +
+            (aus ? (aus.nota ? ' · ' + esc(aus.nota) : '')
+                 : (disp ? ' · puede ' + esc(disp) : '')) + '</small>' +
           '<div class="rank-bar"><i style="width:' +
             Math.round(x.partidos / lista[0].partidos * 100) + '%"></i></div>' +
         '</div>' +
@@ -3620,7 +3737,8 @@ function renderHero(p, s){
     '<span class="chip">'+esc(p.hand||'Diestro')+'</span>',
     prof.comuna ? '<span class="chip">'+esc(prof.comuna)+'</span>' : '',
     prof.since ? '<span class="chip">Juega desde '+esc(prof.since)+'</span>' : '',
-    disp ? '<span class="chip">'+esc(disp)+'</span>' : ''
+    disp ? '<span class="chip">'+esc(disp)+'</span>' : '',
+    ausenciaDe(p) ? '<span class="chip away">'+esc(ausenciaTexto(ausenciaDe(p)))+'</span>' : ''
   ].join('');
 
   $('profileHero').innerHTML = '' +
@@ -3778,7 +3896,22 @@ function fillConfig(p){
     i.checked = prof.days.indexOf(i.value) > -1;
   });
   $('cfBioCount').textContent = prof.bio.length;
+
+  $('cfAway').closest('.box').hidden = !hayAusencia;
+  $('cfAway').value      = p.awayReason || '';
+  $('cfAwayNote').value  = p.awayNote || '';
+  $('cfAwayFrom').value  = p.awayFrom || '';
+  $('cfAwayUntil').value = p.awayUntil || '';
+  sincronizarAusencia();
+
   setDirty(false);
+}
+
+/* Los campos de fecha y detalle no tienen sentido si el jugador está disponible. */
+function sincronizarAusencia(){
+  const fuera = !!$('cfAway').value;
+  $('cfAwayFechas').hidden = !fuera;
+  $('cfAwayNote').closest('.field').hidden = !fuera;
 }
 
 async function saveConfig(){
@@ -3792,8 +3925,16 @@ async function saveConfig(){
     toast('El año debe estar entre 1950 y ' + thisYear + '.', true); $('cfSince').focus(); return;
   }
 
+  const motivo = $('cfAway').value;
+  const desde  = motivo ? $('cfAwayFrom').value  : '';
+  const hasta  = motivo ? $('cfAwayUntil').value : '';
+  if(desde && hasta && hasta < desde){
+    toast('La fecha de término no puede ser anterior a la de inicio.', true);
+    $('cfAwayUntil').focus(); return;
+  }
+
   $('cfSave').disabled = true;
-  const { error } = await sb.from('profiles').update({
+  const datos = {
     name:name,
     category:$('cfCat').value,
     club_id:$('cfClub').value,
@@ -3806,7 +3947,15 @@ async function saveConfig(){
     bio:$('cfBio').value.trim(),
     available_days:Array.prototype.slice.call(document.querySelectorAll('#cfDays input:checked'))
       .map(function(i){ return i.value; })
-  }).eq('id', p.id);
+  };
+  if(hayAusencia){
+    datos.away_reason = motivo;
+    datos.away_note   = motivo ? $('cfAwayNote').value.trim() : '';
+    datos.away_from   = desde || null;
+    datos.away_until  = hasta || null;
+  }
+
+  const { error } = await sb.from('profiles').update(datos).eq('id', p.id);
   $('cfSave').disabled = false;
 
   if(error){ toast(error.message, true); return; }
@@ -4320,6 +4469,7 @@ function bindEvents(){
   $('pane-config').addEventListener('change', function(){ setDirty(true); });
   $('cfBio').addEventListener('input', function(){ $('cfBioCount').textContent = this.value.length; });
   $('cfSave').addEventListener('click', saveConfig);
+  $('cfAway').addEventListener('change', sincronizarAusencia);
   $('cfReset').addEventListener('click', function(){
     fillConfig(me());
     toast('Cambios descartados.');

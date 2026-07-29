@@ -68,6 +68,32 @@ create table if not exists public.profiles (
 alter table public.profiles
   add column if not exists staff boolean not null default false;
 
+-- Fuera de las canchas: lesión, vacaciones o lo que sea, con la ventana de
+-- fechas en que dura. Existe por un problema concreto del club: a un jugador
+-- lesionado lo llamaban todos los días para ofrecerle cancha, y el jugador
+-- terminaba molesto de repetir lo mismo. Marcarlo acá lo saca de las listas
+-- desde las que el club sale a llamar.
+--
+-- El rango es lo que hace que esto no se pudra: al pasar away_until el jugador
+-- vuelve solo, sin que nadie tenga que acordarse de destildarlo.
+alter table public.profiles
+  add column if not exists away_reason text not null default '',
+  add column if not exists away_note   text not null default '',
+  add column if not exists away_from   date,
+  add column if not exists away_until  date;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_away_reason_chk') then
+    alter table public.profiles add constraint profiles_away_reason_chk
+      check (away_reason in ('', 'lesion', 'vacaciones', 'otro'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'profiles_away_range_chk') then
+    alter table public.profiles add constraint profiles_away_range_chk
+      check (away_from is null or away_until is null or away_until >= away_from);
+  end if;
+end $$;
+
 create index if not exists profiles_club_idx on public.profiles (club_id);
 
 -- =============================================================================
@@ -228,11 +254,13 @@ revoke select on public.profiles from authenticated;
 grant select (
   id, name, category, national_rank, club_id, hand, comuna,
   playing_since, available_days, preferred_slot, bio, role, created_at,
-  rating, rating_matches, staff
+  rating, rating_matches, staff,
+  away_reason, away_note, away_from, away_until
 ) on public.profiles to authenticated;
 grant update (
   name, category, national_rank, club_id, hand, phone, comuna,
-  playing_since, available_days, preferred_slot, bio
+  playing_since, available_days, preferred_slot, bio,
+  away_reason, away_note, away_from, away_until
 ) on public.profiles to authenticated;
 
 -- Contacto del rival: solo si hay una reserva confirmada entre ambos.
