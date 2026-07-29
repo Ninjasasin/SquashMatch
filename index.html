@@ -218,6 +218,30 @@ table{width:100%;border-collapse:collapse;font-size:13.5px}
   font-weight:700;
 }
 .estado-cancha b{display:block;color:var(--ink);font-weight:700;margin-bottom:2px}
+
+/* Reglamento y contacto: plegado por omisión. Un modal que hay que cerrar cada
+   vez se aprende a cerrar sin leer, que es peor que no tenerlo. */
+.club-info{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  margin-bottom:18px;
+}
+.club-info summary{
+  padding:13px 16px;cursor:pointer;font-size:13.5px;font-weight:700;color:var(--ink-dim);
+  list-style:none;display:flex;align-items:center;gap:9px;
+}
+.club-info summary::-webkit-details-marker{display:none}
+.club-info summary::before{content:'▸';color:var(--lime);font-size:12px;transition:transform .15s}
+.club-info[open] summary::before{transform:rotate(90deg)}
+.club-info summary:hover{color:var(--ink)}
+.club-info .cuerpo{padding:0 16px 16px;font-size:13px;color:var(--ink-dim);line-height:1.65}
+.club-info .cuerpo h4{
+  margin:14px 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-faint);
+}
+.club-info .cuerpo h4:first-child{margin-top:0}
+.club-info .cuerpo p{margin:0;white-space:pre-wrap}
+.club-info .cuerpo a{color:var(--lime)}
+.aviso-cancel{color:var(--ink-faint);font-size:11.5px;margin-top:4px}
 th{
   background:var(--panel-2);text-align:left;padding:11px 14px;font-size:11px;
   text-transform:uppercase;letter-spacing:.7px;color:var(--ink-faint);font-weight:700;
@@ -450,7 +474,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   display:inline-flex;gap:4px;background:var(--panel-2);border:1px solid var(--line);
   border-radius:12px;padding:4px;margin-bottom:20px;max-width:100%;overflow-x:auto;
 }
-.seg-row{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;justify-content:space-between}
+/* Con seis pestanas la fila envuelve y el boton de la derecha cae solo. El
+   margen inferior va en la fila, no en .seg, o el boton se pega a lo de abajo. */
+.seg-row{
+  display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;
+  justify-content:space-between;margin-bottom:20px;
+}
+.seg-row .seg{margin-bottom:0}
 .seg-btn{
   border:none;background:none;color:var(--ink-dim);font-size:13.5px;font-weight:600;
   padding:9px 16px;border-radius:9px;cursor:pointer;white-space:nowrap;
@@ -999,6 +1029,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <button class="seg-btn" data-cpane="historial">Pagados</button>
         <button class="seg-btn" data-cpane="turnos">Reporte de turnos</button>
         <button class="seg-btn" data-cpane="gestion">Gestión</button>
+        <button class="seg-btn" data-cpane="config">Configuración</button>
       </div>
       <button class="btn sm" id="btnExport">Descargar estado de cuenta</button>
     </div>
@@ -1071,6 +1102,87 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
             <tbody id="rpTabla"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div class="pane" id="cpane-config">
+      <div class="box">
+        <p class="section-title">Horario y turnos</p>
+        <p class="note">Define la grilla que ven los jugadores al reservar. El Club Sirio
+          corre de 08:00 a 22:00 cada 40 minutos: 22 turnos por cancha.</p>
+        <div class="filters" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="field">
+            <label for="ccOpens">Primer turno</label>
+            <input id="ccOpens" type="time" step="600">
+          </div>
+          <div class="field">
+            <label for="ccLast">Último turno</label>
+            <input id="ccLast" type="time" step="600">
+          </div>
+          <div class="field">
+            <label for="ccMin">Duración (minutos)</label>
+            <input id="ccMin" type="number" min="10" max="180" step="5">
+          </div>
+        </div>
+        <p class="hint" id="ccPreview"></p>
+      </div>
+
+      <div class="box">
+        <p class="section-title">Meta de turnos reservados</p>
+        <p class="note">Es contra lo que se mide el reporte de turnos. Del club completo,
+          sin importar quién esté cubriendo el turno.</p>
+        <div class="filters" style="grid-template-columns:1fr 1fr">
+          <div class="field">
+            <label for="ccGoalWeek">De lunes a viernes</label>
+            <input id="ccGoalWeek" type="number" min="0" max="200">
+          </div>
+          <div class="field">
+            <label for="ccGoalWknd">Sábado y domingo</label>
+            <input id="ccGoalWknd" type="number" min="0" max="200">
+          </div>
+        </div>
+      </div>
+
+      <div class="box">
+        <p class="section-title">Reglamento interno</p>
+        <p class="note">Lo leen los jugadores en la vista Canchas, plegado. Escríbelo como
+          quieras: se muestra respetando los saltos de línea.</p>
+        <div class="field">
+          <label for="ccRules">Reglas del club</label>
+          <textarea id="ccRules" rows="6"
+            placeholder="Ej: Uso obligatorio de zapatillas de suela clara, no marcante…"></textarea>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label for="ccCancel">Política de cancelación</label>
+          <textarea id="ccCancel" rows="3"
+            placeholder="Ej: Las cancelaciones con menos de 4 horas de aviso se cobran igual."></textarea>
+          <span class="hint">Esta además aparece junto al botón de cancelar una reserva,
+            que es cuando de verdad se necesita.</span>
+        </div>
+      </div>
+
+      <div class="box">
+        <p class="section-title">Contacto del club</p>
+        <div class="filters" style="grid-template-columns:1fr 1fr">
+          <div class="field">
+            <label for="ccPhone">Teléfono</label>
+            <input id="ccPhone" type="tel" autocomplete="off" placeholder="+56 2 …">
+          </div>
+          <div class="field">
+            <label for="ccEmail">Correo</label>
+            <input id="ccEmail" type="email" autocomplete="off" placeholder="contacto@club.cl">
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label for="ccAddress">Dirección</label>
+          <input id="ccAddress" type="text" autocomplete="off" placeholder="Calle 123, comuna">
+        </div>
+      </div>
+
+      <div class="save-bar">
+        <span class="hint" id="ccStatus"></span>
+        <button class="btn ghost" id="ccReset">Descartar cambios</button>
+        <button class="btn primary" id="ccSave">Guardar configuración</button>
       </div>
     </div>
 
@@ -1203,6 +1315,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <span class="hint" id="cDateLabel"></span>
       </div>
     </div>
+    <details class="club-info" id="clubInfo">
+      <summary>Reglamento y contacto del club</summary>
+      <div id="clubInfoBody"></div>
+    </details>
+
     <p class="section-title" id="courtsTitle"></p>
     <div class="tablewrap">
       <table id="courtsTable">
@@ -1596,7 +1713,9 @@ async function fetchAll(){
              opens:c.opens || '08:00', lastSlot:c.last_slot || '22:00',
              slotMinutes:c.slot_minutes || 40,
              goalWeekday:c.goal_weekday == null ? 16 : c.goal_weekday,
-             goalWeekend:c.goal_weekend == null ? 8  : c.goal_weekend };
+             goalWeekend:c.goal_weekend == null ? 8  : c.goal_weekend,
+             rules:c.rules || '', cancelRule:c.cancel_rule || '',
+             phone:c.phone || '', email:c.email || '', address:c.address || '' };
   });
   slotsCache = {};   // el club pudo cambiar su horario desde la última carga
   state.clubs    = CLUBS;
@@ -2031,6 +2150,18 @@ async function markPayment(paymentId, pagado){
   return error ? { ok:false, reason:error.message } : { ok:true };
 }
 
+async function setClubConfig(clubId, cfg){
+  const { error } = await sb.rpc('set_club_config', {
+    p_club:clubId,
+    p_opens:cfg.opens, p_last_slot:cfg.lastSlot, p_slot_minutes:cfg.slotMinutes,
+    p_goal_weekday:cfg.goalWeekday, p_goal_weekend:cfg.goalWeekend,
+    p_rules:cfg.rules, p_cancel_rule:cfg.cancelRule,
+    p_phone:cfg.phone, p_email:cfg.email, p_address:cfg.address
+  });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
 async function createInvite(clubId, date, time, court, category, msg){
   const check = checkSlot(clubId, date, time, me().id, me().id, court);
   if(!check.ok) return { ok:false, reason:check.reason };
@@ -2366,6 +2497,8 @@ function matchLine(b, past){
         ' <span class="chip cat">'+esc(other ? other.category : '')+'</span></div>' +
       '<div class="row-sub"><b>'+fmtDate(b.date)+' · '+b.time+'</b> — '+esc(c ? c.name : '')+'</div>' +
       (!past && contact ? '<div class="row-sub">Contacto: '+esc(contact)+'</div>' : '') +
+      (!past && !b.result && c && c.cancelRule
+        ? '<div class="row-sub aviso-cancel">' + esc(c.cancelRule) + '</div>' : '') +
     '</div>' +
     right +
   '</div>';
@@ -2561,6 +2694,7 @@ function renderClub(){
   // --- Pagados ---
   renderReporte(clubId);
   renderGestion(clubId);
+  if(!configSucia) llenarConfigClub(clubId);
 
   const recientes = pagados.slice().sort(function(a, b){ return b.paidAt - a.paidAt; }).slice(0, 25);
   $('clubPagados').innerHTML = recientes.length
@@ -2666,6 +2800,97 @@ function descargarEstadoCuenta(clubId){
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
 
   return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
+}
+
+/* La configuración no se vuelve a cargar mientras haya cambios sin guardar: el
+   refresco en vivo llega solo y borraría lo que el club está escribiendo. */
+let configSucia = false;
+
+function marcarConfigSucia(sucia){
+  configSucia = sucia;
+  $('ccStatus').textContent = sucia ? 'Tienes cambios sin guardar' : '';
+  $('ccStatus').style.color = sucia ? 'var(--amber)' : '';
+}
+
+function llenarConfigClub(clubId){
+  const c = club(clubId);
+  if(!c) return;
+  $('ccOpens').value     = c.opens;
+  $('ccLast').value      = c.lastSlot;
+  $('ccMin').value       = c.slotMinutes;
+  $('ccGoalWeek').value  = c.goalWeekday;
+  $('ccGoalWknd').value  = c.goalWeekend;
+  $('ccRules').value     = c.rules;
+  $('ccCancel').value    = c.cancelRule;
+  $('ccPhone').value     = c.phone;
+  $('ccEmail').value     = c.email;
+  $('ccAddress').value   = c.address;
+  marcarConfigSucia(false);
+  previsualizarGrilla();
+}
+
+/* Cuántos turnos salen de lo que el club está escribiendo, antes de guardar. */
+function previsualizarGrilla(){
+  const ini = minutosDe($('ccOpens').value);
+  const fin = minutosDe($('ccLast').value);
+  const paso = parseInt($('ccMin').value, 10);
+  if(!paso || fin <= ini){ $('ccPreview').textContent = ''; return; }
+  const n = Math.floor((fin - ini) / paso) + 1;
+  const c = club($('clClub').value);
+  $('ccPreview').textContent = n + ' turnos por cancha' +
+    (c ? ' · ' + (n * c.courts) + ' entre las ' + c.courts + ' canchas' : '') +
+    ' · el último parte a las ' + horaDe(ini + (n - 1) * paso);
+}
+
+async function guardarConfigClub(){
+  const clubId = $('clClub').value;
+  if(minutosDe($('ccLast').value) <= minutosDe($('ccOpens').value)){
+    toast('El último turno tiene que ser posterior al primero.', true);
+    $('ccLast').focus(); return;
+  }
+  const paso = parseInt($('ccMin').value, 10);
+  if(!isFinite(paso) || paso < 10 || paso > 180){
+    toast('La duración del turno tiene que estar entre 10 y 180 minutos.', true);
+    $('ccMin').focus(); return;
+  }
+
+  $('ccSave').disabled = true;
+  const res = await setClubConfig(clubId, {
+    opens:$('ccOpens').value, lastSlot:$('ccLast').value, slotMinutes:paso,
+    goalWeekday:parseInt($('ccGoalWeek').value, 10) || 0,
+    goalWeekend:parseInt($('ccGoalWknd').value, 10) || 0,
+    rules:$('ccRules').value.trim(), cancelRule:$('ccCancel').value.trim(),
+    phone:$('ccPhone').value.trim(), email:$('ccEmail').value.trim(),
+    address:$('ccAddress').value.trim()
+  });
+  $('ccSave').disabled = false;
+
+  if(!res.ok){ toast(res.reason, true); return; }
+  marcarConfigSucia(false);
+  llenarConfigClub(clubId);
+  toast('Configuración guardada. La grilla nueva ya la ven los jugadores.');
+}
+
+/* Reglamento y contacto, para el jugador. Si el club no cargó nada, el panel
+   no se muestra: un desplegable vacío es ruido. */
+function renderClubInfo(c){
+  const contacto = [
+    c.phone   ? '<p>' + esc(c.phone) + '</p>' : '',
+    c.email   ? '<p><a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a></p>' : '',
+    c.address ? '<p>' + esc(c.address) + '</p>' : ''
+  ].join('');
+
+  if(!c.rules && !c.cancelRule && !contacto){
+    $('clubInfo').hidden = true;
+    return;
+  }
+  $('clubInfo').hidden = false;
+
+  $('clubInfoBody').innerHTML = '<div class="cuerpo">' +
+    (c.rules      ? '<h4>Reglamento interno</h4><p>' + esc(c.rules) + '</p>' : '') +
+    (c.cancelRule ? '<h4>Política de cancelación</h4><p>' + esc(c.cancelRule) + '</p>' : '') +
+    (contacto     ? '<h4>Contacto</h4>' + contacto : '') +
+  '</div>';
 }
 
 /* ---------- Reporte de turnos ---------- */
@@ -3172,6 +3397,8 @@ function renderCourts(){
   const date = $('cDate').value || todayISO();
   const c = club(clubId);
   if(!c) return;
+
+  renderClubInfo(c);
 
   // Los bloques ya pasados no se muestran: no se pueden reservar y solo estorban.
   const todos = slotsOf(clubId);
@@ -4468,6 +4695,20 @@ function bindEvents(){
   $('pane-config').addEventListener('input', function(){ setDirty(true); });
   $('pane-config').addEventListener('change', function(){ setDirty(true); });
   $('cfBio').addEventListener('input', function(){ $('cfBioCount').textContent = this.value.length; });
+  $('cpane-config').addEventListener('input', function(){ marcarConfigSucia(true); });
+  $('cpane-config').addEventListener('change', function(){ marcarConfigSucia(true); });
+  ['ccOpens','ccLast','ccMin'].forEach(function(id){
+    $(id).addEventListener('input', previsualizarGrilla);
+  });
+  // Cambiar de club recarga la ficha aunque haya cambios a medio escribir: son
+  // de otro club y guardarlos acá sería peor que perderlos.
+  $('clClub').addEventListener('change', function(){ llenarConfigClub(this.value); });
+  $('ccSave').addEventListener('click', guardarConfigClub);
+  $('ccReset').addEventListener('click', function(){
+    llenarConfigClub($('clClub').value);
+    toast('Cambios descartados.');
+  });
+
   $('cfSave').addEventListener('click', saveConfig);
   $('cfAway').addEventListener('change', sincronizarAusencia);
   $('cfReset').addEventListener('click', function(){

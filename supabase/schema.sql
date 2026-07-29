@@ -30,8 +30,18 @@ alter table public.clubs
   add column if not exists goal_weekday int  not null default 16 check (goal_weekday >= 0),
   add column if not exists goal_weekend int  not null default 8  check (goal_weekend >= 0);
 
+-- Reglamento interno y datos de contacto. El club los edita desde su panel y
+-- los jugadores los leen en la vista Canchas, plegados: es el momento en que
+-- importan —están eligiendo hora— y así no estorban al que ya los conoce.
+alter table public.clubs
+  add column if not exists rules       text not null default '',
+  add column if not exists cancel_rule text not null default '',
+  add column if not exists phone       text not null default '',
+  add column if not exists email       text not null default '',
+  add column if not exists address     text not null default '';
+
 -- El insert de abajo no toca estas columnas a propósito: si el club ajusta su
--- horario o su meta, volver a correr el esquema no se los pisa.
+-- horario, su meta o su reglamento, volver a correr el esquema no se los pisa.
 insert into public.clubs (id, name, comuna, courts) values
   ('c1', 'Club Sirio',      'Las Condes',  2),
   ('c2', 'Santiago Squash', 'Providencia', 2)
@@ -812,6 +822,63 @@ as $$
 $$;
 
 grant execute on function public.is_club_admin(text) to authenticated;
+
+-- Configuración del club: la edita solo quien lo administra. Va por función y
+-- no por un grant de update para que la comprobación viva en el servidor.
+create or replace function public.set_club_config(
+  p_club         text,
+  p_opens        text,
+  p_last_slot    text,
+  p_slot_minutes int,
+  p_goal_weekday int,
+  p_goal_weekend int,
+  p_rules        text,
+  p_cancel_rule  text,
+  p_phone        text,
+  p_email        text,
+  p_address      text
+)
+returns public.clubs
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fila public.clubs;
+begin
+  if not public.is_club_admin(p_club) then
+    raise exception 'Solo el administrador del club puede cambiar su configuracion.';
+  end if;
+  if p_slot_minutes < 10 or p_slot_minutes > 180 then
+    raise exception 'La duracion del turno tiene que estar entre 10 y 180 minutos.';
+  end if;
+  if p_opens::time >= p_last_slot::time then
+    raise exception 'La hora del ultimo turno tiene que ser posterior a la de apertura.';
+  end if;
+  if p_goal_weekday < 0 or p_goal_weekend < 0 then
+    raise exception 'Las metas no pueden ser negativas.';
+  end if;
+
+  update public.clubs
+     set opens        = p_opens,
+         last_slot    = p_last_slot,
+         slot_minutes = p_slot_minutes,
+         goal_weekday = p_goal_weekday,
+         goal_weekend = p_goal_weekend,
+         rules        = coalesce(p_rules, ''),
+         cancel_rule  = coalesce(p_cancel_rule, ''),
+         phone        = coalesce(p_phone, ''),
+         email        = coalesce(p_email, ''),
+         address      = coalesce(p_address, '')
+   where id = p_club
+  returning * into fila;
+
+  return fila;
+end $$;
+
+grant execute on function public.set_club_config(
+  text, text, text, int, int, int, text, text, text, text, text
+) to authenticated;
 
 -- Un cobro por jugador y por reserva.
 create table if not exists public.payments (
