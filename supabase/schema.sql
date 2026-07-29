@@ -119,12 +119,23 @@ create table if not exists public.challenges (
   court      int  not null default 0,   -- 0 = cualquiera disponible
   message    text default '',
   status     text not null default 'pendiente'
-             check (status in ('pendiente','aceptada','rechazada','cancelada','caducada')),
+             check (status in ('pendiente','contrapropuesta','aceptada',
+                               'rechazada','cancelada','caducada')),
   note       text default '',
   booking_id uuid,
   created_at timestamptz not null default now(),
   constraint challenges_distinct_players check (from_id <> to_id)
 );
+
+-- Contrapropuesta: el desafiado no dice que no, dice "ese día no, pero el
+-- jueves sí". match_date y match_time pasan a ser los del horario nuevo —así
+-- accept_challenge no necesita saber nada de esto— y counter_of_* guarda el
+-- horario original, solo para poder mostrar de dónde se venía.
+alter table public.challenges
+  add column if not exists counter_of_date date,
+  add column if not exists counter_of_time text,
+  add column if not exists counter_msg     text not null default '',
+  add column if not exists counter_by      uuid references public.profiles(id) on delete set null;
 
 create index if not exists challenges_to_idx   on public.challenges (to_id, status);
 create index if not exists challenges_from_idx on public.challenges (from_id, status);
@@ -322,7 +333,8 @@ drop policy if exists challenges_insert on public.challenges;
 create policy challenges_insert on public.challenges
   for insert to authenticated with check (from_id = auth.uid());
 
--- Retirar el propio desafío o rechazar uno recibido. Aceptar va por RPC.
+-- Retirar el propio desafío o rechazar uno recibido. Aceptar y contraproponer
+-- van por RPC: las dos tocan horarios y hay que revalidarlos en el servidor.
 drop policy if exists challenges_update on public.challenges;
 create policy challenges_update on public.challenges
   for update to authenticated
@@ -388,10 +400,17 @@ begin
   if ch is null then
     raise exception 'Ese desafío ya no existe.';
   end if;
-  if ch.to_id <> auth.uid() then
-    raise exception 'Solo puede aceptar el jugador desafiado.';
-  end if;
-  if ch.status <> 'pendiente' then
+  -- Un desafío lo acepta el desafiado; una contrapropuesta la acepta quien
+  -- desafió, que es a quien le cambiaron el horario.
+  if ch.status = 'pendiente' then
+    if ch.to_id <> auth.uid() then
+      raise exception 'Solo puede aceptar el jugador desafiado.';
+    end if;
+  elsif ch.status = 'contrapropuesta' then
+    if ch.from_id <> auth.uid() then
+      raise exception 'La contrapropuesta la acepta quien envió el desafío.';
+    end if;
+  else
     raise exception 'La solicitud ya no está pendiente.';
   end if;
 
@@ -480,6 +499,81 @@ begin
 
   return new_book;
 end $$;
+
+-- Responder con otro horario en vez de rechazar. Solo una vuelta: si el horario
+-- nuevo tampoco sirve, se rechaza y se manda un desafío nuevo. Sin ese límite
+-- esto se convierte en una negociación de ida y vuelta sin cierre.
+create or replace function public.counter_challenge(
+  p_challenge uuid,
+  p_date      date,
+  p_time      text,
+  p_court     int,
+  p_msg       text
+)
+returns public.challenges
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  ch      public.challenges;
+  cl      public.clubs;
+  slot_ts timestamptz;
+  fila    public.challenges;
+begin
+  select * into ch from public.challenges where id = p_challenge for update;
+  if ch is null then
+    raise exception 'Ese desafio ya no existe.';
+  end if;
+  if ch.to_id <> auth.uid() then
+    raise exception 'Solo el jugador desafiado puede proponer otro horario.';
+  end if;
+  if ch.status <> 'pendiente' then
+    raise exception 'Ese desafio ya no esta pendiente.';
+  end if;
+
+  select * into cl from public.clubs where id = ch.club_id;
+  if p_court < 0 or p_court > cl.courts then
+    raise exception 'Ese club no tiene una cancha %.', p_court;
+  end if;
+
+  slot_ts := (p_date + p_time::time) at time zone 'America/Santiago';
+  if slot_ts < now() then
+    raise exception 'Ese horario ya paso.';
+  end if;
+
+  if p_date = ch.match_date and p_time = ch.match_time then
+    raise exception 'Ese es el mismo horario que te propusieron.';
+  end if;
+
+  -- Ninguno de los dos puede tener ya un partido en el bloque nuevo.
+  if exists (
+    select 1 from public.bookings b
+     where b.status = 'confirmada'
+       and b.match_date = p_date
+       and b.match_time = p_time
+       and (b.player_a in (ch.from_id, ch.to_id) or b.player_b in (ch.from_id, ch.to_id))
+  ) then
+    raise exception 'Uno de los dos ya tiene un partido en ese bloque.';
+  end if;
+
+  update public.challenges
+     set counter_of_date = ch.match_date,
+         counter_of_time = ch.match_time,
+         counter_msg     = coalesce(p_msg, ''),
+         counter_by      = auth.uid(),
+         match_date      = p_date,
+         match_time      = p_time,
+         court           = p_court,
+         status          = 'contrapropuesta',
+         note            = ''
+   where id = ch.id
+  returning * into fila;
+
+  return fila;
+end $$;
+
+grant execute on function public.counter_challenge(uuid, date, text, int, text) to authenticated;
 
 -- =============================================================================
 -- 8. RESULTADO EN DOS PASOS
