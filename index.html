@@ -1489,6 +1489,28 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   </div>
 </div>
 
+<!-- ============ MODAL CLAVE NUEVA ============ -->
+<div class="overlay" id="claveModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>Clave nueva</h2>
+        <p id="clSub"></p>
+      </div>
+      <button class="x" data-close="claveModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="entrega" id="clCreds"></div>
+      <div class="auth-note" style="margin-top:14px">La clave anterior dejó de funcionar.
+        El socio tendrá que cambiar esta la primera vez que entre. No queda guardada en
+        ninguna parte: si se pierde antes de que la use, hay que generarla de nuevo.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn primary" data-close="claveModal">Listo</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL CREAR SOCIO ============ -->
 <div class="overlay" id="socioModal">
   <div class="modal">
@@ -2042,6 +2064,14 @@ function jugadores(){
   return state.players.filter(function(p){ return !p.staff; });
 }
 
+/* Buscar sin acentos, o en Chile la busqueda no sirve: escribir "andres" no
+   encontraba a "Andres Soto" porque el nombre lleva tilde, y nadie escribe
+   tildes en un buscador. Se normaliza los dos lados. */
+function sinAcentos(txt){
+  return String(txt || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function fmtCLP(n){
   return '$' + Number(n || 0).toLocaleString('es-CL');
 }
@@ -2508,7 +2538,7 @@ let filtroJugadores = { q:'', cat:'todas', club:'todos', sort:'rank' };
 
 function aplicarFiltros(){
   filtroJugadores = {
-    q: $('fSearch').value.trim().toLowerCase(),
+    q: sinAcentos($('fSearch').value.trim()),
     cat: $('fCat').value,
     club: $('fClub').value,
     sort: $('fSort').value
@@ -2535,7 +2565,7 @@ function renderPlayers(){
     if(cl !== 'todos' && p.clubId !== cl) return false;
     if(q){
       const c = club(p.clubId);
-      const hay = (p.name + ' ' + (c ? c.name : '') + ' ' + p.category).toLowerCase();
+      const hay = sinAcentos(p.name + ' ' + (c ? c.name : '') + ' ' + p.category);
       if(hay.indexOf(q) === -1) return false;
     }
     return true;
@@ -3366,7 +3396,7 @@ function quienJuegaEn(clubId, dias, ventana, dia, incluirFinde){
    de la ventana de horario solo trae a los que más juegan en ese bloque: sirve
    para descubrir a quién ofrecerle, no para buscar a alguien puntual. */
 function renderClubPlayers(clubId){
-  const q = ($('cjBuscar').value || '').trim().toLowerCase();
+  const q = sinAcentos(($('cjBuscar').value || '').trim());
   const modo = $('cjFiltro').value;
 
   // Última vez que jugó en este club, para saber si sigue activo.
@@ -3381,7 +3411,7 @@ function renderClubPlayers(clubId){
   const lista = jugadores().filter(function(j){
     if(modo === 'club' && j.clubId !== clubId) return false;
     if(modo === 'marcados' && !marcaGuardada(clubId, j.id)) return false;
-    if(q && j.name.toLowerCase().indexOf(q) === -1) return false;
+    if(q && sinAcentos(j.name).indexOf(q) === -1) return false;
     return true;
   }).sort(function(a, b){ return a.name.localeCompare(b.name, 'es'); });
 
@@ -3410,7 +3440,9 @@ function renderClubPlayers(clubId){
             ? ' <span class="chip away">no llamar · ' + esc(marca.titulo.toLowerCase()) +
               (marca.hasta ? ' hasta el ' + esc(fmtDate(marca.hasta)) : '') + '</span>'
             : (guardada ? ' <span class="chip">marca vencida</span>' : '')) + '</div>' +
-        '<div class="row-sub">' + esc(cl ? cl.name : 'sin club') +
+        '<div class="row-sub">' +
+          (j.memberId ? '<span class="mono">' + esc(j.memberId) + '</span> · ' : '') +
+          esc(cl ? cl.name : 'sin club') +
           (dias === null
             ? ' · nunca ha jugado acá'
             : ' · última vez ' + (dias === 0 ? 'hoy' : 'hace ' + dias +
@@ -3424,6 +3456,10 @@ function renderClubPlayers(clubId){
         '<button class="btn sm' + (guardada ? ' danger' : '') + '" ' +
           'data-marcar="' + clubId + '|' + j.id + '">' +
           (guardada ? 'Ver marca' : 'No llamar') + '</button>' +
+        // Solo los socios tienen ID: las cuentas viejas con correo no se resetean acá.
+        (j.memberId
+          ? '<button class="btn sm" data-clave="' + j.id + '">Clave nueva</button>'
+          : '') +
       '</div>' +
     '</div>';
   }).join('');
@@ -4730,6 +4766,24 @@ async function crearSocio(clubId, datos){
   return { ok:true, memberId:datos.memberId, clave:clave };
 }
 
+/* El reseteo pasa por una función del servidor: cambiar la clave de otra persona
+   necesita la llave de administración de Supabase, y esa no puede estar en el
+   código de la app. Ver supabase/functions/reset-clave. */
+async function resetearClave(playerId){
+  const { data, error } = await sb.functions.invoke('reset-clave', {
+    body:{ player_id:playerId }
+  });
+  if(error){
+    // El cuerpo del error trae el motivo; el mensaje suelto es genérico.
+    let motivo = error.message;
+    try { const j = await error.context.json(); if(j && j.error) motivo = j.error; } catch(e){}
+    return { ok:false, reason:motivo };
+  }
+  if(data && data.error) return { ok:false, reason:data.error };
+  await refresh();
+  return { ok:true, memberId:data.member_id, name:data.name, clave:data.clave };
+}
+
 function openSocio(){
   ['scName','scRut','scPhone','scMember'].forEach(function(id){ $(id).value = ''; });
   $('scCat').value = CATEGORIES[0];
@@ -5461,7 +5515,7 @@ function bindEvents(){
       '[data-rejectinvite],[data-cancelinvite],' +
       '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
       '[data-vermas],[data-vermenos],[data-marcar],[data-avisar],' +
-      '[data-tomaraviso],[data-avisovisto]');
+      '[data-tomaraviso],[data-avisovisto],[data-clave]');
     if(!el) return;
     const d = el.dataset;
 
@@ -5559,6 +5613,20 @@ function bindEvents(){
       } else if(d.cancelinvite){
         await cancelInvite(d.cancelinvite);
         toast('Publicación dada de baja.');
+      } else if(d.clave){
+        const j = player(d.clave);
+        if(confirm('¿Generar una clave nueva para ' + (j ? j.name : 'este socio') +
+                   '? La actual deja de funcionar.')){
+          const res = await resetearClave(d.clave);
+          if(!res.ok){ toast(res.reason, true); }
+          else {
+            $('clSub').textContent = 'Entrégasela a ' + res.name + ' en recepción.';
+            $('clCreds').innerHTML =
+              '<div><b>ID de socio</b> <code>' + esc(res.memberId) + '</code></div>' +
+              '<div><b>Clave nueva</b> <code>' + esc(res.clave) + '</code></div>';
+            openModal('claveModal');
+          }
+        }
       } else if(d.avisovisto){
         await marcarAvisoVisto(d.avisovisto);
       } else if(d.confirmresult){
