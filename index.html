@@ -203,6 +203,21 @@ main{max-width:1200px;margin:0 auto;padding:26px 20px 70px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 /* Solo el ranking necesita ancho mínimo: son 7 columnas y apretadas no se leen. */
 #view-ranking table{min-width:560px}
+
+/* Canchas: una columna por cancha, para poder comparar de un vistazo cuál está
+   libre a la misma hora. Antes iban las dos dentro de la misma celda. */
+#courtsTable{min-width:460px;table-layout:fixed}
+#courtsTable th.cancha,#courtsTable td.cancha{width:auto}
+#courtsBody td{vertical-align:top}
+.estado-cancha{
+  display:block;border-radius:9px;padding:9px 11px;font-size:12.5px;line-height:1.35;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--ink-dim);
+}
+.estado-cancha.libre{
+  background:rgba(201,242,74,.09);border-color:rgba(201,242,74,.30);color:var(--lime);
+  font-weight:700;
+}
+.estado-cancha b{display:block;color:var(--ink);font-weight:700;margin-bottom:2px}
 th{
   background:var(--panel-2);text-align:left;padding:11px 14px;font-size:11px;
   text-transform:uppercase;letter-spacing:.7px;color:var(--ink-faint);font-weight:700;
@@ -1146,8 +1161,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     </div>
     <p class="section-title" id="courtsTitle"></p>
     <div class="tablewrap">
-      <table>
-        <thead><tr><th style="width:110px">Hora</th><th>Estado de canchas</th></tr></thead>
+      <table id="courtsTable">
+        <thead id="courtsHead"></thead>
         <tbody id="courtsBody"></tbody>
       </table>
     </div>
@@ -3050,28 +3065,38 @@ function renderCourts(){
   $('courtsTitle').textContent = c.name + ' · ' + c.courts + ' canchas · ' + fmtDate(date) +
     (hidden ? ' · ' + hidden + (hidden === 1 ? ' bloque pasado oculto' : ' bloques pasados ocultos') : '');
 
+  // Una columna por cancha: así se compara de un vistazo cuál está libre a la
+  // misma hora, que es la pregunta que uno se hace al reservar.
+  let encabezado = '<tr><th style="width:88px">Hora</th>';
+  for(let n = 1; n <= c.courts; n++){
+    encabezado += '<th class="cancha">Cancha ' + n + '</th>';
+  }
+  $('courtsHead').innerHTML = encabezado + '</tr>';
+
   if(!slots.length){
-    $('courtsBody').innerHTML = '<tr><td colspan="2" class="wrap" style="color:var(--ink-faint)">' +
-      'Ya no quedan bloques disponibles hoy. Elige otra fecha.</td></tr>';
+    $('courtsBody').innerHTML = '<tr><td colspan="' + (c.courts + 1) + '" class="wrap" ' +
+      'style="color:var(--ink-faint)">Ya no quedan bloques disponibles hoy. ' +
+      'Elige otra fecha.</td></tr>';
     return;
   }
 
   $('courtsBody').innerHTML = slots.map(function(t){
     const busy = bookingsAt(clubId, date, t);
-    // Con dos canchas por club conviene ver el estado de cada una, no un conteo.
-    let cells = '';
+    let celdas = '';
     for(let n = 1; n <= c.courts; n++){
       const b = busy.find(function(x){ return x.court === n; });
       if(b){
         const a = player(b.playerA), bb = player(b.playerB);
-        cells += '<span class="chip">Cancha '+n+': ' +
-          esc(b.source === 'club' ? 'reservada por el club'
-                                  : (a?a.name:'?')+' vs '+(bb?bb.name:'?')) + '</span>';
+        celdas += '<td class="cancha wrap"><span class="estado-cancha">' +
+          (b.source === 'club'
+            ? 'Reservada por el club'
+            : '<b>' + esc(a ? a.name : '?') + '</b>vs ' + esc(bb ? bb.name : '?')) +
+          '</span></td>';
       } else {
-        cells += '<span class="state ok">Cancha '+n+' libre</span>';
+        celdas += '<td class="cancha"><span class="estado-cancha libre">Libre</span></td>';
       }
     }
-    return '<tr><td><b>'+t+'</b></td><td class="wrap"><div class="chips">'+cells+'</div></td></tr>';
+    return '<tr><td><b>' + t + '</b></td>' + celdas + '</tr>';
   }).join('');
 }
 
