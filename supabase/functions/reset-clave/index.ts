@@ -141,7 +141,9 @@ Deno.serve(async (req: Request) => {
     .from('profiles')
     .select('id, name, member_id, club_id, staff, role')
     .eq('id', playerId)
-    .single();
+    // maybeSingle y no single: con cero filas single revienta con un error de
+    // coercion que sale como 500, cuando en realidad es un 404.
+    .maybeSingle();
 
   if (errSocio) {
     return json({ error: 'No pude leer el socio: ' + errSocio.message }, 500);
