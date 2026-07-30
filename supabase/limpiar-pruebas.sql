@@ -24,11 +24,12 @@ delete from public.challenges
 delete from public.open_invites
  where message ~* '(auditor|prueba|canal)';
 
--- Reservas del club que solo existieron para comprobar la cancelación.
--- Sus cobros se van con ellas.
+-- Reservas del club que solo existieron para probar. La nota las delata, y va sin
+-- filtrar por estado: antes esto solo borraba las canceladas, asi que una reserva
+-- de prueba confirmada se quedaba en la agenda con sus dos cobros.
 delete from public.bookings
  where source = 'club'
-   and status = 'cancelada';
+   and (status = 'cancelada' or club_note ~* '(auditor|prueba)');
 
 -- Reservas de la app canceladas durante las pruebas, sin resultado cargado.
 -- Solo las de estos últimos días: las canceladas viejas son historia real.
