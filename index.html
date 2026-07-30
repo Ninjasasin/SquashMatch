@@ -522,6 +522,14 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   justify-content:space-between;margin-bottom:20px;
 }
 .seg-row .seg{margin-bottom:0}
+
+/* Las dos descargas van juntas, el selector pegado al boton, para que se lea
+   como una sola accion y no como dos controles suelto. */
+.descargas{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.descargas select{
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+  border-radius:9px;padding:8px 10px;font-size:13px;font-family:inherit;
+}
 .seg-btn{
   border:none;background:none;color:var(--ink-dim);font-size:13.5px;font-weight:600;
   padding:9px 16px;border-radius:9px;cursor:pointer;white-space:nowrap;
@@ -1032,7 +1040,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <button class="seg-btn" data-cpane="gestion">Gestión</button>
         <button class="seg-btn" data-cpane="config">Configuración</button>
       </div>
-      <button class="btn sm" id="btnExport">Descargar estado de cuenta</button>
+      <div class="descargas">
+        <select id="exportQue" aria-label="Qué descargar">
+          <option value="cobranza">Estado de cuenta</option>
+          <option value="turnos">Reporte de turnos</option>
+        </select>
+        <button class="btn sm" id="btnExport">Descargar</button>
+      </div>
     </div>
 
     <div class="tiles" id="clubTiles"></div>
@@ -2202,9 +2216,12 @@ function fmtDateLong(iso){
          MESES_LARGO[d.getMonth()] + ' de ' + d.getFullYear();
 }
 
+/* Estaba escrito tres veces en el archivo. Uno solo, y los tres usos lo comparten. */
+const DIAS_SEMANA = ['dom','lun','mar','mié','jue','vie','sáb'];
+
 function fmtDate(iso){
   const d = parseISO(iso);
-  const dias = ['dom','lun','mar','mié','jue','vie','sáb'];
+  const dias = DIAS_SEMANA;
   const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return dias[d.getDay()] + ' ' + d.getDate() + ' ' + meses[d.getMonth()];
 }
@@ -3186,6 +3203,12 @@ function descargarEstadoCuenta(clubId){
   const nombre = 'cobranza-' + c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
                  '-' + todayISO() + '.csv';
 
+  descargarTexto(texto, nombre);
+  return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
+}
+
+/** Bajar un texto como archivo. Lo comparten las dos descargas. */
+function descargarTexto(texto, nombre){
   const blob = new Blob([texto], { type:'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3195,8 +3218,62 @@ function descargarEstadoCuenta(clubId){
   a.click();
   document.body.removeChild(a);
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
 
-  return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
+/* El mismo reporte que se ve en pantalla, pero en planilla y respetando el
+   periodo elegido: sirve para llevarlo a la reunion de los ejecutivos, que es
+   donde se revisa el bono. */
+function descargarReporteTurnos(clubId){
+  const c = club(clubId);
+  if(!c) return;
+
+  const dias = parseInt($('rpPeriodo').value, 10) || 30;
+  const serie = turnosPorDia(clubId, dias);
+  const techo = c.courts * slotsOf(clubId).length;
+
+  const cabecera = ['Fecha','Dia','Turnos','Meta','Diferencia','Cumplio',
+                    'Por la app','Cargados por el club','Disponibles'];
+  const cuerpo = serie.slice().reverse().map(function(x){
+    const dif = x.total - x.meta;
+    return [
+      x.iso,
+      DIAS_SEMANA[x.dow],
+      x.total,
+      x.meta,
+      (dif > 0 ? '+' : '') + dif,
+      dif >= 0 ? 'si' : 'no',
+      x.app,
+      x.club,
+      techo
+    ].map(csvCampo).join(';');
+  });
+
+  const total    = serie.reduce(function(a, x){ return a + x.total; }, 0);
+  const porApp   = serie.reduce(function(a, x){ return a + x.app; }, 0);
+  const cumplen  = serie.filter(function(x){ return x.total >= x.meta; }).length;
+  const promedio = (total / serie.length).toFixed(1).replace('.', ',');
+
+  const resumen = [
+    '',
+    ['RESUMEN', c.name].map(csvCampo).join(';'),
+    ['Periodo', 'últimos ' + dias + ' días, al ' + fmtDateLong(todayISO())].map(csvCampo).join(';'),
+    ['Turnos reservados', total].map(csvCampo).join(';'),
+    ['Promedio diario', promedio].map(csvCampo).join(';'),
+    ['Dias con la meta cumplida', cumplen + ' de ' + serie.length].map(csvCampo).join(';'),
+    ['Reservado por la app', (total ? Math.round(porApp / total * 100) : 0) + '%'].map(csvCampo).join(';'),
+    ['Turnos disponibles al dia', techo].map(csvCampo).join(';')
+  ];
+
+  // El punto y coma y la marca inicial son para que Excel en español lo abra en
+  // columnas y con los acentos correctos.
+  const texto = '\uFEFF' + [cabecera.map(csvCampo).join(';')]
+    .concat(cuerpo).concat(resumen).join('\r\n');
+
+  const nombre = 'turnos-' + c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
+                 '-' + dias + 'd-' + todayISO() + '.csv';
+
+  descargarTexto(texto, nombre);
+  return { dias:dias, total:total, cumplen:cumplen, de:serie.length, nombre:nombre };
 }
 
 /* La configuración no se vuelve a cargar mientras haya cambios sin guardar: el
@@ -3912,7 +3989,7 @@ function renderGestion(clubId){
   const turnos = slotsOf(clubId);
   let maximo = 0;
   turnos.forEach(function(t){ g.mapa[t].forEach(function(v){ if(v > maximo) maximo = v; }); });
-  const dias7 = ['dom','lun','mar','mié','jue','vie','sáb'];
+  const dias7 = DIAS_SEMANA;
   const orden = [1,2,3,4,5,6,0];   // la semana parte el lunes
 
   let filas = '';
@@ -5918,7 +5995,16 @@ function bindEvents(){
   });
 
   $('btnExport').addEventListener('click', function(){
-    const r = descargarEstadoCuenta($('clClub').value);
+    const clubId = $('clClub').value;
+    if($('exportQue').value === 'turnos'){
+      const r = descargarReporteTurnos(clubId);
+      if(r){
+        toast('Descargado: ' + r.dias + ' días, ' + r.total + ' turnos, meta cumplida ' +
+              r.cumplen + ' de ' + r.de + '.');
+      }
+      return;
+    }
+    const r = descargarEstadoCuenta(clubId);
     if(r) toast('Descargado: ' + r.filas + ' movimientos, ' + fmtCLP(r.total) + ' por cobrar.');
   });
 
