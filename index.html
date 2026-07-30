@@ -5200,7 +5200,11 @@ async function submitAuth(){
       await enterApp(res.data.session);
       const yo = me();
       if(yo && !yo.mustChangePassword && profileComplete(yo)){
-        toast('Hola de nuevo, ' + yo.name.split(' ')[0] + '.');
+        // La cuenta del club se llama "Club Sirio - Administracion": cortarla en
+        // el primer espacio deja un "Hola de nuevo, Club" que suena a error.
+        toast(yo.staff
+          ? 'Panel del club listo.'
+          : 'Hola de nuevo, ' + yo.name.split(' ')[0] + '.');
       }
       return;
     }
