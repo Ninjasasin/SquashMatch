@@ -1837,3 +1837,25 @@ alter table public.bookings  drop column if exists ladder_applied;
 -- Se rehace solo sobre club_id, que es lo que consulta el directorio.
 drop index if exists public.profiles_club_idx;
 create index profiles_club_idx on public.profiles (club_id);
+
+-- =============================================================================
+-- 13. PERMISOS PARA EL CODIGO DEL SERVIDOR
+-- Las Edge Functions se conectan con la llave secreta, que en la base es el rol
+-- service_role. En este proyecto ese rol no traia permisos sobre nuestras tablas,
+-- asi que sus consultas devolvian "permission denied for table profiles" aunque
+-- la llave fuera la correcta y estuviera bien puesta.
+--
+-- No abre una puerta nueva: esa llave ya podia todo por el Admin API de
+-- autenticacion, y solo la conoce el servidor. Lo que faltaba era el acceso a
+-- las tablas.
+--
+-- El alter default privileges es para que las tablas que se agreguen despues no
+-- repitan el mismo problema.
+-- =============================================================================
+grant usage on schema public to service_role;
+grant all privileges on all tables    in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
+grant execute       on all functions  in schema public to service_role;
+
+alter default privileges in schema public grant all on tables    to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
