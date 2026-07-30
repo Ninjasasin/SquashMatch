@@ -84,14 +84,42 @@ Deno.serve(async (req: Request) => {
     const nombres = Object.keys(Deno.env.toObject())
       .filter((k) => k.startsWith('SUPABASE_') || k.startsWith('SM_'))
       .sort();
-    const prueba = createClient(url, servicio, { auth: { persistSession: false } });
-    const perfiles = await prueba.from('profiles').select('id').limit(1);
-    const clubes = await prueba.from('clubs').select('id').limit(1);
+
+    /* Las llaves con formato nuevo (sb_secret_) no se autentican igual que las
+       antiguas, que eran JWT. Se prueban las combinaciones a mano para saber
+       cual honra el servidor, en vez de suponerlo. */
+    const probar = async (etiqueta: string, headers: Record<string, string>) => {
+      try {
+        const r = await fetch(url + '/rest/v1/clubs?select=id&limit=1', { headers });
+        return etiqueta + ': ' + r.status + ' ' + (await r.text()).slice(0, 90);
+      } catch (e) {
+        return etiqueta + ': fallo ' + String(e).slice(0, 60);
+      }
+    };
+
+    const rest = [
+      await probar('solo apikey', { apikey: servicio }),
+      await probar('solo bearer', { Authorization: 'Bearer ' + servicio }),
+      await probar('apikey+bearer', { apikey: servicio, Authorization: 'Bearer ' + servicio }),
+    ];
+
+    // El Admin API de autenticacion es otro servicio: puede aceptar la llave
+    // aunque la base de datos no la acepte.
+    let adminApi = '';
+    try {
+      const r = await fetch(url + '/auth/v1/admin/users?page=1&per_page=1', {
+        headers: { apikey: servicio, Authorization: 'Bearer ' + servicio },
+      });
+      adminApi = r.status + ' ' + (await r.text()).slice(0, 90);
+    } catch (e) {
+      adminApi = 'fallo ' + String(e).slice(0, 60);
+    }
+
     return json({
       variablesEncontradas: nombres,
       servicioEmpiezaCon: servicio.slice(0, 12),
-      leerProfiles: perfiles.error ? perfiles.error.message : 'ok',
-      leerClubs: clubes.error ? clubes.error.message : 'ok',
+      rest,
+      adminApi,
     });
   }
 
