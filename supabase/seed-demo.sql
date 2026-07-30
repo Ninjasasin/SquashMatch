@@ -7,10 +7,14 @@
 -- partidos ya confirmados, para que el directorio, el ranking y las
 -- estadísticas se vean vivos al mostrar la app.
 --
---   Jugadores:    nombre@squash.cl   (camila@squash.cl, rodrigo@squash.cl, …)
---                 Contraseña: squash2026
---   Club Sirio:   clubsirio@squash.cl · Contraseña: admin2026
+-- Para entrar se escribe solo el nombre, sin dominio: la app lo completa sola.
+--
+--   Jugadores:    joaquin, camila, rodrigo, …   Contraseña: squash2026
+--   Club Sirio:   clubsirio                     Contraseña: admin2026
 --                 Es cuenta de administración del club, no juega.
+--
+-- Por detrás quedan como nombre@socios.squashmatch.internal, porque Supabase
+-- exige un identificador con forma de correo. Nadie recibe correo ahí.
 --
 -- Sirven para iniciar sesión y recorrer la app como cualquiera de ellos.
 --
@@ -19,7 +23,7 @@
 -- entrar registrándose.
 --
 -- Para borrar todo lo que crea este script:
---   delete from auth.users where email like '%@squash.cl';
+--   delete from auth.users where email like '%@socios.squashmatch.internal';
 -- =============================================================================
 
 -- pgcrypto es la que cifra la contraseña. En Supabase viene instalada; esta
@@ -27,7 +31,7 @@
 create extension if not exists pgcrypto with schema extensions;
 
 -- Limpia una corrida anterior de este mismo script, para poder repetirlo.
-delete from auth.users where email like '%@demo.squashmatch.cl';
+delete from auth.users where email like '%@socios.squashmatch.internal';
 
 -- -----------------------------------------------------------------------------
 -- 1. Cuentas
@@ -50,18 +54,18 @@ select
   jsonb_build_object('full_name', j.nombre),
   '', '', '', ''
 from (values
-  ('matias@squash.cl',     'Matías Fuentes',    120),
-  ('cristobal@squash.cl',  'Cristóbal Herrera', 115),
-  ('rodrigo@squash.cl',    'Rodrigo Vera',      110),
-  ('felipe@squash.cl',     'Felipe Cárcamo',    100),
-  ('sebastian@squash.cl',  'Sebastián Rojas',    95),
-  ('tomas@squash.cl',      'Tomás Aguilera',     90),
-  ('joaquin@squash.cl',    'Joaquín Silva',      85),
-  ('pablo@squash.cl',      'Pablo Navarrete',    80),
-  ('camila@squash.cl',     'Camila Rojas',       75),
-  ('fernanda@squash.cl',   'Fernanda Lagos',     70),
-  ('valentina@squash.cl',  'Valentina Muñoz',    65),
-  ('jorge@squash.cl',      'Jorge Salazar',      60)
+  ('matias@socios.squashmatch.internal',     'Matías Fuentes',    120),
+  ('cristobal@socios.squashmatch.internal',  'Cristóbal Herrera', 115),
+  ('rodrigo@socios.squashmatch.internal',    'Rodrigo Vera',      110),
+  ('felipe@socios.squashmatch.internal',     'Felipe Cárcamo',    100),
+  ('sebastian@socios.squashmatch.internal',  'Sebastián Rojas',    95),
+  ('tomas@socios.squashmatch.internal',      'Tomás Aguilera',     90),
+  ('joaquin@socios.squashmatch.internal',    'Joaquín Silva',      85),
+  ('pablo@socios.squashmatch.internal',      'Pablo Navarrete',    80),
+  ('camila@socios.squashmatch.internal',     'Camila Rojas',       75),
+  ('fernanda@socios.squashmatch.internal',   'Fernanda Lagos',     70),
+  ('valentina@socios.squashmatch.internal',  'Valentina Muñoz',    65),
+  ('jorge@socios.squashmatch.internal',      'Jorge Salazar',      60)
 ) as j(correo, nombre, antiguedad)
 where not exists (select 1 from auth.users u where u.email = j.correo);
 
@@ -75,7 +79,7 @@ select
   jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true),
   'email', u.id::text, now(), now(), now()
 from auth.users u
-where u.email like '%@squash.cl'
+where u.email like '%@socios.squashmatch.internal'
   and not exists (
     select 1 from auth.identities i where i.user_id = u.id and i.provider = 'email'
   );
@@ -93,25 +97,25 @@ update public.profiles p
        playing_since = d.desde,
        club_id       = d.club
 from (values
-  ('cristobal@squash.cl', 'Primera',    1, 'Zurdo',   'Providencia',  '2009', 'c2'),
-  ('matias@squash.cl',    'Primera',    3, 'Diestro', 'Las Condes',   '2011', 'c2'),
-  ('felipe@squash.cl',    'Segunda',   12, 'Diestro', 'Ñuñoa',        '2015', 'c2'),
-  ('tomas@squash.cl',     'Tercera',   41, 'Diestro', 'La Reina',     '2018', 'c2'),
-  ('pablo@squash.cl',     'Cuarta',    68, 'Zurdo',   'Macul',        '2021', 'c2'),
-  ('rodrigo@squash.cl',   'Primera',    7, 'Diestro', 'Las Condes',   '2010', 'c1'),
-  ('sebastian@squash.cl', 'Segunda',   24, 'Zurdo',   'Vitacura',     '2016', 'c1'),
-  ('joaquin@squash.cl',   'Tercera',   52, 'Diestro', 'Las Condes',   '2019', 'c1'),
-  ('camila@squash.cl',    'Damas A',    2, 'Diestro', 'Las Condes',   '2014', 'c1'),
-  ('fernanda@squash.cl',  'Damas A',    5, 'Zurdo',   'Lo Barnechea', '2017', 'c1'),
-  ('valentina@squash.cl', 'Damas B',   21, 'Diestro', 'Vitacura',     '2020', 'c1'),
-  ('jorge@squash.cl',     'Máster +40', 6, 'Diestro', 'Las Condes',   '2005', 'c1')
+  ('cristobal@socios.squashmatch.internal', 'Primera',    1, 'Zurdo',   'Providencia',  '2009', 'c2'),
+  ('matias@socios.squashmatch.internal',    'Primera',    3, 'Diestro', 'Las Condes',   '2011', 'c2'),
+  ('felipe@socios.squashmatch.internal',    'Segunda',   12, 'Diestro', 'Ñuñoa',        '2015', 'c2'),
+  ('tomas@socios.squashmatch.internal',     'Tercera',   41, 'Diestro', 'La Reina',     '2018', 'c2'),
+  ('pablo@socios.squashmatch.internal',     'Cuarta',    68, 'Zurdo',   'Macul',        '2021', 'c2'),
+  ('rodrigo@socios.squashmatch.internal',   'Primera',    7, 'Diestro', 'Las Condes',   '2010', 'c1'),
+  ('sebastian@socios.squashmatch.internal', 'Segunda',   24, 'Zurdo',   'Vitacura',     '2016', 'c1'),
+  ('joaquin@socios.squashmatch.internal',   'Tercera',   52, 'Diestro', 'Las Condes',   '2019', 'c1'),
+  ('camila@socios.squashmatch.internal',    'Damas A',    2, 'Diestro', 'Las Condes',   '2014', 'c1'),
+  ('fernanda@socios.squashmatch.internal',  'Damas A',    5, 'Zurdo',   'Lo Barnechea', '2017', 'c1'),
+  ('valentina@socios.squashmatch.internal', 'Damas B',   21, 'Diestro', 'Vitacura',     '2020', 'c1'),
+  ('jorge@socios.squashmatch.internal',     'Máster +40', 6, 'Diestro', 'Las Condes',   '2005', 'c1')
 ) as d(correo, categoria, ranking, mano, comuna, desde, club)
 where p.email = d.correo;
 
 -- -----------------------------------------------------------------------------
 -- 2b. Cuenta de administración del Club Sirio
 -- No es un jugador: no aparece en el directorio ni en el ranking.
---   Correo: clubsirio@squash.cl   ·   Contraseña: admin2026
+--   Correo: clubsirio@socios.squashmatch.internal   ·   Contraseña: admin2026
 -- -----------------------------------------------------------------------------
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -121,13 +125,13 @@ insert into auth.users (
 )
 select
   '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
-  'authenticated', 'authenticated', 'clubsirio@squash.cl',
+  'authenticated', 'authenticated', 'clubsirio@socios.squashmatch.internal',
   extensions.crypt('admin2026', extensions.gen_salt('bf')),
   now(), now(), now(),
   '{"provider":"email","providers":["email"]}'::jsonb,
   jsonb_build_object('full_name', 'Club Sirio · Administración'),
   '', '', '', ''
-where not exists (select 1 from auth.users where email = 'clubsirio@squash.cl');
+where not exists (select 1 from auth.users where email = 'clubsirio@socios.squashmatch.internal');
 
 insert into auth.identities (
   id, user_id, identity_data, provider, provider_id,
@@ -137,15 +141,15 @@ select gen_random_uuid(), u.id,
   jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true),
   'email', u.id::text, now(), now(), now()
 from auth.users u
-where u.email = 'clubsirio@squash.cl'
+where u.email = 'clubsirio@socios.squashmatch.internal'
   and not exists (select 1 from auth.identities i where i.user_id = u.id and i.provider = 'email');
 
 update public.profiles
    set staff = true, club_id = 'c1', name = 'Club Sirio · Administración'
- where email = 'clubsirio@squash.cl';
+ where email = 'clubsirio@socios.squashmatch.internal';
 
 insert into public.club_admins (club_id, player_id)
-select 'c1', id from public.profiles where email = 'clubsirio@squash.cl'
+select 'c1', id from public.profiles where email = 'clubsirio@socios.squashmatch.internal'
 on conflict do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -181,9 +185,9 @@ from (values
   ('c2', 1, 35, '21:00', 'matias',    'tomas',     'matias',    3, 0),
   ('c2', 2, 42, '19:00', 'cristobal', 'pablo',     'cristobal', 3, 0)
 ) as m(club, cancha, dias, hora, a, b, ganador, sets_g, sets_p)
-join public.profiles pa on pa.email = m.a       || '@squash.cl'
-join public.profiles pb on pb.email = m.b       || '@squash.cl'
-join public.profiles pg on pg.email = m.ganador || '@squash.cl'
+join public.profiles pa on pa.email = m.a       || '@socios.squashmatch.internal'
+join public.profiles pb on pb.email = m.b       || '@socios.squashmatch.internal'
+join public.profiles pg on pg.email = m.ganador || '@socios.squashmatch.internal'
 where not exists (
   select 1 from public.bookings b
    where b.club_id = m.club and b.match_date = current_date - m.dias
@@ -203,6 +207,6 @@ select c.name as club, p.name as jugador, p.email as correo,
 -- =============================================================================
 -- PARA BORRAR TODO ESTO (los perfiles, partidos y desafíos se van en cascada):
 --
---   delete from auth.users where email like '%@squash.cl';
+--   delete from auth.users where email like '%@socios.squashmatch.internal';
 --
 -- =============================================================================

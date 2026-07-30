@@ -4404,7 +4404,8 @@ function renderHero(p, s){
     '<div class="hero-main">' +
       '<h2>'+esc(p.name)+'</h2>' +
       '<div class="pmeta">'+esc(c ? c.name + ' · ' + c.comuna : 'Sin club asignado') +
-        (prof.email ? ' · ' + esc(prof.email) : '') + '</div>' +
+        (prof.email && !correoInterno(prof.email) ? ' · ' + esc(prof.email) : '') +
+        (p.memberId ? ' · <span class="mono">' + esc(p.memberId) + '</span>' : '') + '</div>' +
       '<div class="chips">'+chips+'</div>' +
     '</div>' +
     '<div class="hero-rank"><b>'+(p.rating || '—')+'</b><span>rating' +
@@ -4541,7 +4542,11 @@ function fillConfig(p){
   $('cfClub').value = p.clubId;
   $('cfHand').value = p.hand || 'Diestro';
   $('cfSince').value = prof.since;
-  $('cfEmail').value = prof.email;
+  // El correo interno no se muestra: no es del jugador y no recibe nada.
+  $('cfEmail').value = correoInterno(prof.email) ? '' : prof.email;
+  $('cfEmail').placeholder = p.memberId
+    ? 'Tu ID de socio es ' + p.memberId
+    : 'nombre@correo.cl';
   $('cfPhone').value = prof.phone;
   $('cfComuna').value = prof.comuna;
   const franjas = prof.franja ? prof.franja.split(',').map(function(f){ return f.trim(); }) : [];
@@ -5045,11 +5050,24 @@ function showApp(){
 
    Si lo que escriben lleva arroba se usa tal cual: así siguen entrando las
    cuentas viejas y la del club, que se crearon con correo de verdad. */
-/* Supabase valida el dominio del correo, asi que no sirve uno inventado: rechaza
-   socio.squashmatch.app por no existir. Se usa squash.cl, que es real y es el
-   mismo que ya usan las cuentas de prueba. Nadie recibe correo aca: el ID de
-   socio es lo unico que el jugador escribe. */
-const DOMINIO_SOCIO = 'squash.cl';
+/* Supabase Auth exige un identificador con forma de correo —no tiene modo
+   "nombre de usuario"— asi que el ID de socio se completa con este dominio por
+   detras. El jugador no lo ve ni lo escribe nunca.
+
+   .internal esta reservado justamente para esto: nunca va a pertenecerle a
+   nadie, asi que ningun correo puede salir por error hacia un tercero. Antes
+   esto era squash.cl, que es de otra persona.
+
+   Ojo: esto funciona porque el proyecto tiene apagada la confirmacion por
+   correo. Con la confirmacion activa, Supabase intenta enviar y rechaza los
+   dominios que no existen. */
+const DOMINIO_SOCIO = 'socios.squashmatch.internal';
+
+/** ¿Es el correo interno que le armamos nosotros, y no uno del jugador? */
+function correoInterno(correo){
+  return String(correo || '').indexOf('@' + DOMINIO_SOCIO) > -1 ||
+         /@squash\.cl$/.test(String(correo || ''));
+}
 
 function correoDeAcceso(entrada){
   const v = String(entrada || '').trim().toLowerCase();
