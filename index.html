@@ -242,6 +242,17 @@ table{width:100%;border-collapse:collapse;font-size:13.5px}
 .club-info .cuerpo p{margin:0;white-space:pre-wrap}
 .club-info .cuerpo a{color:var(--lime)}
 .aviso-cancel{color:var(--ink-faint);font-size:11.5px;margin-top:4px}
+
+/* Agenda del club: misma grilla en columnas que la del jugador, pero cada celda
+   lleva ademas los cobros y los botones de la reserva. */
+#clubAgendaTable{min-width:520px;table-layout:fixed}
+#clubAgenda td{vertical-align:top}
+#clubAgenda .estado-cancha{display:block}
+#clubAgenda .pay-line{margin-top:6px}
+.agenda-nota{
+  display:block;margin-top:5px;font-size:11.5px;color:var(--ink-faint);
+  font-style:italic;
+}
 .contrapropuesta{color:var(--ink-faint);font-size:11.5px;text-decoration:line-through}
 th{
   background:var(--panel-2);text-align:left;padding:11px 14px;font-size:11px;
@@ -1020,7 +1031,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         </div>
       </div>
       <p class="section-title" id="clubAgendaTitle"></p>
-      <div class="list" id="clubAgenda"></div>
+      <div class="tablewrap">
+        <table id="clubAgendaTable">
+          <thead id="clubAgendaHead"></thead>
+          <tbody id="clubAgenda"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="pane" id="cpane-jugadores">
@@ -1438,13 +1454,23 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <button class="x" data-close="clubBookModal">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="field">
-        <label for="cbNote">¿Quiénes juegan?</label>
-        <textarea id="cbNote" rows="2" placeholder="Ej: Pedro Martínez y un invitado · paga Pedro"></textarea>
-        <span class="hint">Queda anotado en la reserva para poder cobrarles después.</span>
+      <div class="two">
+        <div class="field">
+          <label for="cbPlayerA">Jugador 1</label>
+          <select id="cbPlayerA"></select>
+        </div>
+        <div class="field">
+          <label for="cbPlayerB">Jugador 2</label>
+          <select id="cbPlayerB"></select>
+        </div>
       </div>
-      <div class="auth-note">Se cobra la cancha completa. Es para jugadores que no usan
-        la app: los que sí la usan reservan solos y se les cobra la mitad a cada uno.</div>
+      <div class="field">
+        <label for="cbNote">Nota (opcional)</label>
+        <textarea id="cbNote" rows="2"
+          placeholder="Ej: viene un invitado de Pedro · paga en efectivo"></textarea>
+        <span class="hint">Para los invitados sin cuenta y cualquier detalle del cobro.</span>
+      </div>
+      <div class="avail" id="cbAvail"></div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close="clubBookModal">Cancelar</button>
@@ -2374,9 +2400,10 @@ async function cancelBooking(bookingId){
   await refresh();
 }
 
-async function clubBook(clubId, date, time, court, nota){
+async function clubBook(clubId, date, time, court, nota, playerA, playerB){
   const { error } = await sb.rpc('club_book', {
-    p_club:clubId, p_date:date, p_time:time, p_court:court, p_note:nota || ''
+    p_club:clubId, p_date:date, p_time:time, p_court:court, p_note:nota || '',
+    p_player_a:playerA || null, p_player_b:playerB || null
   });
   await refresh();
   return error ? { ok:false, reason:error.message } : { ok:true };
@@ -2882,43 +2909,53 @@ function renderClub(){
   $('clDateLabel').textContent = fmtDateLong(dia);
   $('clubAgendaTitle').textContent = c.name + ' · ' + fmtDate(dia);
 
+  /* Una columna por cancha, igual que la grilla del jugador: apiladas en filas
+     había que leer el texto para saber cuál estaba libre a esa hora. */
+  let encabezado = '<tr><th style="width:74px">Hora</th>';
+  for(let n = 1; n <= c.courts; n++){
+    encabezado += '<th class="cancha">Cancha ' + n + '</th>';
+  }
+  $('clubAgendaHead').innerHTML = encabezado + '</tr>';
+
   $('clubAgenda').innerHTML = slotsOf(clubId).map(function(t){
-    let filas = '';
+    let celdas = '';
     for(let n = 1; n <= c.courts; n++){
       const b = state.bookings.find(function(x){
         return x.clubId === clubId && x.date === dia && x.time === t &&
                x.court === n && x.status === 'confirmada';
       });
+
       if(!b){
-        filas += '<div class="slot-free">Cancha ' + n + ' · libre' +
-          '<button class="btn primary sm" style="margin-left:12px" ' +
-          'data-clubbook="' + clubId + '|' + dia + '|' + t + '|' + n + '">Reservar</button></div>';
+        celdas += '<td class="cancha"><span class="estado-cancha libre">Libre' +
+          '<button class="btn primary sm" style="margin-top:8px;display:block" ' +
+          'data-clubbook="' + clubId + '|' + dia + '|' + t + '|' + n + '">Reservar</button>' +
+          '</span></td>';
         continue;
       }
 
       const cobros = state.payments.filter(function(x){ return x.bookingId === b.id; });
-      const esDelClub = b.source === 'club';
       const a = player(b.playerA), bb = player(b.playerB);
+      // Quiénes jugaron: los que tienen cuenta van por nombre, y lo que falta
+      // queda descrito en la nota.
+      const quienes = (a || bb)
+        ? esc(a ? a.name : 'invitado') + ' vs ' + esc(bb ? bb.name : 'invitado')
+        : 'Reserva del club';
 
-      filas +=
-        '<div class="row" style="display:block">' +
-          '<div class="row-title">Cancha ' + n + ' · ' +
-            (esDelClub
-              ? 'Reserva del club <span class="chip">sin cuenta</span>'
-              : esc(a ? a.name : '?') + ' vs ' + esc(bb ? bb.name : '?')) + '</div>' +
-          (notaDe(b.id) ? '<div class="msg">' + esc(notaDe(b.id)) + '</div>' : '') +
-          cobros.map(function(x){ return pagoChip(x, true); }).join('') +
-          '<div class="btn-row" style="margin-top:10px">' +
-            '<button class="btn ghost sm" data-clubnote="' + b.id + '">' +
-              (notaDe(b.id) ? 'Editar nota' : 'Agregar nota') + '</button>' +
-            (esDelClub
-              ? '<button class="btn danger sm" data-clubcancel="' + b.id + '">Cancelar reserva</button>'
-              : '') +
-          '</div>' +
-        '</div>';
+      celdas += '<td class="cancha wrap"><span class="estado-cancha">' +
+        '<b>' + quienes + '</b>' +
+        (b.source === 'club' && !a && !bb ? '<span class="chip">sin cuenta</span>' : '') +
+        (notaDe(b.id) ? '<span class="agenda-nota">' + esc(notaDe(b.id)) + '</span>' : '') +
+        cobros.map(function(x){ return pagoChip(x, true); }).join('') +
+        '<span class="btn-row" style="margin-top:8px">' +
+          '<button class="btn ghost sm" data-clubnote="' + b.id + '">' +
+            (notaDe(b.id) ? 'Nota' : 'Nota +') + '</button>' +
+          (b.source === 'club'
+            ? '<button class="btn danger sm" data-clubcancel="' + b.id + '">Cancelar</button>'
+            : '') +
+        '</span>' +
+      '</span></td>';
     }
-    return '<div style="margin-bottom:14px">' +
-      '<p class="section-title" style="margin:0 0 8px">' + t + '</p>' + filas + '</div>';
+    return '<tr><td><b>' + t + '</b></td>' + celdas + '</tr>';
   }).join('');
 
   // --- Por cobrar ---
@@ -2992,8 +3029,29 @@ function abrirReservaClub(clave){
   $('cbSub').textContent = (c ? c.name : '') + ' · ' + fmtDateLong(reservaClubDatos.date) +
     ' · ' + reservaClubDatos.time + ' hrs · cancha ' + reservaClubDatos.court;
   $('cbNote').value = '';
+
+  /* El club reserva a nombre de socios, no solo de invitados: con el modelo nuevo
+     la mayoria de las reservas las hace el mostrador, y si no se identifica a
+     quien jugo, al socio no le aparece su deuda. Los del club van primero porque
+     son los que se reservan casi siempre. */
+  const propio = reservaClubDatos.clubId;
+  const propios = jugadores().filter(function(j){ return j.clubId === propio; });
+  const otros   = jugadores().filter(function(j){ return j.clubId !== propio; });
+  const opciones = [{ value:'', label:'— invitado sin cuenta —' }]
+    .concat(propios.map(function(j){ return { value:j.id, label:j.name }; }))
+    .concat(otros.map(function(j){
+      const otroClub = club(j.clubId);
+      return { value:j.id,
+               label:j.name + ' (' + (otroClub ? otroClub.name : 'otro club') + ')' };
+    }));
+  fillSelect($('cbPlayerA'), opciones, null, null);
+  fillSelect($('cbPlayerB'), opciones, null, null);
+  $('cbPlayerA').value = '';
+  $('cbPlayerB').value = '';
+  resumirCobroClub();
+
   openModal('clubBookModal');
-  setTimeout(function(){ $('cbNote').focus(); }, 30);
+  setTimeout(function(){ $('cbPlayerA').focus(); }, 30);
 }
 
 /* Estado de cuenta en planilla. Es el respaldo del club: el plan gratis de la
@@ -3137,6 +3195,33 @@ async function guardarConfigClub(){
   marcarConfigSucia(false);
   llenarConfigClub(clubId);
   toast('Configuración guardada. La grilla nueva ya la ven los jugadores.');
+}
+
+/* Cuanto se le va a cobrar a quien, antes de reservar. Lo calcula igual que el
+   servidor: cada mitad se le carga a alguien si se sabe a quien. */
+function resumirCobroClub(){
+  const c = club(reservaClubDatos ? reservaClubDatos.clubId : $('clClub').value);
+  const precio = c ? c.price : 15000;
+  const a = $('cbPlayerA').value, b = $('cbPlayerB').value;
+  const box = $('cbAvail');
+
+  const nombres = [a, b].filter(Boolean).map(function(id){
+    const j = player(id);
+    return j ? j.name.split(' ')[0] : '';
+  });
+
+  box.className = 'avail ok';
+  if(a && b){
+    box.textContent = '✓ ' + fmtCLP(precio / 2) + ' a cada uno: ' + nombres.join(' y ') +
+      '. Les va a aparecer en su cuenta.';
+  } else if(a || b){
+    box.textContent = '✓ ' + fmtCLP(precio / 2) + ' a ' + nombres[0] + ', y ' +
+      fmtCLP(precio / 2) + ' sin nombre por el invitado. Anota en la nota quién es.';
+  } else {
+    box.textContent = fmtCLP(precio) + ' por la cancha completa, sin cobro a nadie en ' +
+      'particular. Anota en la nota quién jugó.';
+    box.className = 'avail';
+  }
 }
 
 /* Reglamento y contacto, para el jugador. Si el club no cargó nada, el panel
@@ -5452,6 +5537,9 @@ function bindEvents(){
     if(e.key === 'Enter'){ e.preventDefault(); aplicarFiltros(); }
   });
   $('rCat').addEventListener('change', renderRanking);
+  ['cbPlayerA','cbPlayerB'].forEach(function(id){
+    $(id).addEventListener('change', resumirCobroClub);
+  });
   ['cjBuscar','cjFiltro'].forEach(function(id){
     $(id).addEventListener('input', function(){ renderClubPlayers($('clClub').value); });
   });
@@ -5482,7 +5570,8 @@ function bindEvents(){
     if(!reservaClubDatos) return;
     this.disabled = true;
     const d = reservaClubDatos;
-    const res = await clubBook(d.clubId, d.date, d.time, d.court, $('cbNote').value);
+    const res = await clubBook(d.clubId, d.date, d.time, d.court, $('cbNote').value,
+                              $('cbPlayerA').value, $('cbPlayerB').value);
     this.disabled = false;
     if(!res.ok){ toast(res.reason, true); return; }
     closeModal('clubBookModal');

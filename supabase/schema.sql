@@ -1288,18 +1288,35 @@ begin
   select court_price into precio from public.clubs where id = new.club_id;
   precio := coalesce(precio, 15000);
 
-  -- Reserva hecha por el club para gente sin cuenta: un solo cobro por la cancha
-  -- completa, sin jugador asociado. Quien jugo queda en la nota.
-  if new.player_a is null or new.player_b is null then
+  /* La cancha se cobra por mitades, y cada mitad se le carga a alguien si se
+     sabe a quien. Cuando el club reserva puede saber uno, los dos o ninguno:
+     - los dos socios      -> dos cobros de la mitad, igual que una reserva normal
+     - un socio y un invitado -> la mitad al socio, la otra sin nombre
+     - dos invitados       -> un solo cobro por la cancha completa
+
+     Antes cualquier reserva del club generaba un unico cobro sin jugador, asi que
+     al socio no le aparecia su deuda aunque hubiera jugado. Con el club haciendo
+     la mayoria de las reservas, eso dejaba la cobranza a ciegas. */
+  if new.player_a is not null then
     insert into public.payments (booking_id, player_id, club_id, amount)
-    values (new.id, null, new.club_id, precio);
-    return new;
+    values (new.id, new.player_a, new.club_id, precio / 2)
+    on conflict (booking_id, player_id) do nothing;
   end if;
 
-  insert into public.payments (booking_id, player_id, club_id, amount)
-  values (new.id, new.player_a, new.club_id, precio / 2),
-         (new.id, new.player_b, new.club_id, precio / 2)
-  on conflict (booking_id, player_id) do nothing;
+  if new.player_b is not null then
+    insert into public.payments (booking_id, player_id, club_id, amount)
+    values (new.id, new.player_b, new.club_id, precio / 2)
+    on conflict (booking_id, player_id) do nothing;
+  end if;
+
+  -- La parte que no tiene nombre: la cancha completa si no se identifico a
+  -- nadie, o la mitad si solo falto uno.
+  if new.player_a is null or new.player_b is null then
+    insert into public.payments (booking_id, player_id, club_id, amount)
+    values (new.id, null, new.club_id,
+            case when new.player_a is null and new.player_b is null
+                 then precio else precio / 2 end);
+  end if;
 
   return new;
 end $$;
@@ -1366,12 +1383,18 @@ end $$;
 grant execute on function public.mark_payment(uuid, boolean) to authenticated;
 
 -- Reservar una cancha para gente que no usa la app. La nota guarda quien jugo.
+-- La firma cambia, asi que la version vieja se retira: si no, Postgres deja las
+-- dos conviviendo como sobrecargas y la app podria llamar a la que no queremos.
+drop function if exists public.club_book(text, date, text, int, text);
+
 create or replace function public.club_book(
-  p_club  text,
-  p_date  date,
-  p_time  text,
-  p_court int,
-  p_note  text
+  p_club     text,
+  p_date     date,
+  p_time     text,
+  p_court    int,
+  p_note     text,
+  p_player_a uuid default null,
+  p_player_b uuid default null
 )
 returns public.bookings
 language plpgsql
@@ -1408,11 +1431,35 @@ begin
     raise exception 'Esa cancha ya esta reservada en ese bloque.';
   end if;
 
+  -- El mismo jugador dos veces no es un partido.
+  if p_player_a is not null and p_player_a = p_player_b then
+    raise exception 'Elige dos jugadores distintos.';
+  end if;
+
+  -- Las cuentas de club no juegan.
+  if exists (select 1 from public.profiles
+              where id in (p_player_a, p_player_b) and staff) then
+    raise exception 'Una cuenta de administracion no puede jugar.';
+  end if;
+
+  -- Ninguno de los dos puede tener ya un partido en ese bloque, en este club o
+  -- en otro: es la misma regla que se aplica al aceptar un desafio.
+  if exists (
+    select 1 from public.bookings b
+     where b.status = 'confirmada'
+       and b.match_date = p_date
+       and b.match_time = p_time
+       and (b.player_a in (p_player_a, p_player_b)
+         or b.player_b in (p_player_a, p_player_b))
+  ) then
+    raise exception 'Uno de los jugadores ya tiene un partido en ese bloque.';
+  end if;
+
   insert into public.bookings (
     club_id, court, match_date, match_time, player_a, player_b,
     status, source, club_note
   ) values (
-    p_club, p_court, p_date, p_time, null, null,
+    p_club, p_court, p_date, p_time, p_player_a, p_player_b,
     'confirmada', 'club', coalesce(p_note, '')
   )
   returning * into nueva;
@@ -1472,7 +1519,8 @@ begin
   return updated;
 end $$;
 
-grant execute on function public.club_book(text, date, text, int, text) to authenticated;
+grant execute on function public.club_book(text, date, text, int, text, uuid, uuid)
+  to authenticated;
 grant execute on function public.set_club_note(uuid, text) to authenticated;
 grant execute on function public.club_cancel(uuid) to authenticated;
 
