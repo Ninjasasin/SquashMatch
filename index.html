@@ -256,6 +256,22 @@ table{width:100%;border-collapse:collapse;font-size:13.5px}
 .agenda-res{
   display:block;margin-top:5px;font-size:12px;font-weight:700;color:var(--lime);
 }
+
+/* Buscador con autocompletado. Va sobre el resto del formulario, asi que la
+   lista es absoluta y con z-index por encima de los campos de abajo. */
+.field.busca{position:relative}
+.busca-lista{
+  position:absolute;left:0;right:0;top:calc(100% - 18px);z-index:30;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  max-height:210px;overflow-y:auto;box-shadow:0 12px 28px rgba(0,0,0,.55);
+}
+.busca-item{
+  padding:9px 12px;font-size:13.5px;cursor:pointer;display:flex;gap:8px;
+  align-items:baseline;
+}
+.busca-item small{color:var(--ink-faint);font-size:11.5px}
+.busca-item:hover,.busca-item.marcado{background:rgba(201,242,74,.13);color:var(--ink)}
+.busca-vacio{padding:9px 12px;font-size:12.5px;color:var(--ink-faint)}
 .contrapropuesta{color:var(--ink-faint);font-size:11.5px;text-decoration:line-through}
 th{
   background:var(--panel-2);text-align:left;padding:11px 14px;font-size:11px;
@@ -1465,13 +1481,21 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     </div>
     <div class="modal-body">
       <div class="two">
-        <div class="field">
-          <label for="cbPlayerA">Jugador 1</label>
-          <select id="cbPlayerA"></select>
+        <div class="field busca">
+          <label for="cbNameA">Jugador 1</label>
+          <input id="cbNameA" type="text" placeholder="Escribe el nombre…"
+                 autocomplete="off" spellcheck="false">
+          <input type="hidden" id="cbPlayerA">
+          <div class="busca-lista" id="cbListA" hidden></div>
+          <span class="hint" id="cbHintA">En blanco queda como invitado sin cuenta.</span>
         </div>
-        <div class="field">
-          <label for="cbPlayerB">Jugador 2</label>
-          <select id="cbPlayerB"></select>
+        <div class="field busca">
+          <label for="cbNameB">Jugador 2</label>
+          <input id="cbNameB" type="text" placeholder="Escribe el nombre…"
+                 autocomplete="off" spellcheck="false">
+          <input type="hidden" id="cbPlayerB">
+          <div class="busca-lista" id="cbListB" hidden></div>
+          <span class="hint" id="cbHintB">En blanco queda como invitado sin cuenta.</span>
         </div>
       </div>
       <div class="field">
@@ -3067,24 +3091,24 @@ function abrirReservaClub(clave){
      la mayoria de las reservas las hace el mostrador, y si no se identifica a
      quien jugo, al socio no le aparece su deuda. Los del club van primero porque
      son los que se reservan casi siempre. */
+  // Los del club primero: son los que se reservan casi siempre.
   const propio = reservaClubDatos.clubId;
-  const propios = jugadores().filter(function(j){ return j.clubId === propio; });
-  const otros   = jugadores().filter(function(j){ return j.clubId !== propio; });
-  const opciones = [{ value:'', label:'— invitado sin cuenta —' }]
-    .concat(propios.map(function(j){ return { value:j.id, label:j.name }; }))
-    .concat(otros.map(function(j){
-      const otroClub = club(j.clubId);
-      return { value:j.id,
-               label:j.name + ' (' + (otroClub ? otroClub.name : 'otro club') + ')' };
-    }));
-  fillSelect($('cbPlayerA'), opciones, null, null);
-  fillSelect($('cbPlayerB'), opciones, null, null);
-  $('cbPlayerA').value = '';
-  $('cbPlayerB').value = '';
+  const candidatos = jugadores().slice().sort(function(x, y){
+    const px = x.clubId === propio ? 0 : 1, py = y.clubId === propio ? 0 : 1;
+    if(px !== py) return px - py;
+    return x.name.localeCompare(y.name, 'es');
+  }).map(function(j){
+    const c2 = club(j.clubId);
+    return { id:j.id, nombre:j.name,
+             detalle:(j.category || '') +
+               (j.clubId !== propio ? ' · ' + (c2 ? c2.name : 'otro club') : '') };
+  });
+  cargarBuscador('cbA', candidatos);
+  cargarBuscador('cbB', candidatos);
   resumirCobroClub();
 
   openModal('clubBookModal');
-  setTimeout(function(){ $('cbPlayerA').focus(); }, 30);
+  setTimeout(function(){ $('cbNameA').focus(); }, 30);
 }
 
 /* Estado de cuenta en planilla. Es el respaldo del club: el plan gratis de la
@@ -3230,6 +3254,112 @@ async function guardarConfigClub(){
   toast('Configuración guardada. La grilla nueva ya la ven los jugadores.');
 }
 
+/* =========================================================
+   BUSCADOR DE JUGADOR
+   ---------------------------------------------------------
+   Se escribe y se va filtrando, en vez de abrir un desplegable: con 70 socios
+   buscar a ojo en una lista es peor que teclear tres letras. Se compara sin
+   acentos, porque nadie los escribe en un buscador.
+   ========================================================= */
+const buscadores = {};
+
+function crearBuscador(clave, inputId, hiddenId, listaId, alElegir){
+  const b = {
+    inp:$(inputId), hid:$(hiddenId), lista:$(listaId),
+    candidatos:[], visibles:[], marcado:-1, alElegir:alElegir
+  };
+  buscadores[clave] = b;
+
+  b.inp.addEventListener('input', function(){
+    b.hid.value = '';        // mientras se escribe no hay nadie elegido
+    filtrarBuscador(clave);
+    if(b.alElegir) b.alElegir();
+  });
+  b.inp.addEventListener('focus', function(){ filtrarBuscador(clave); });
+  b.inp.addEventListener('keydown', function(e){ teclasBuscador(clave, e); });
+  // El cierre se atrasa para que el clic en un item alcance a registrarse.
+  b.inp.addEventListener('blur', function(){
+    setTimeout(function(){ cerrarBuscador(clave); }, 150);
+  });
+  b.lista.addEventListener('mousedown', function(e){
+    const it = e.target.closest('[data-pick]');
+    if(it){ e.preventDefault(); elegirEnBuscador(clave, it.dataset.pick); }
+  });
+}
+
+/** candidatos: [{ id, nombre, detalle }] */
+function cargarBuscador(clave, candidatos){
+  const b = buscadores[clave];
+  if(!b) return;
+  b.candidatos = candidatos;
+  b.inp.value = '';
+  b.hid.value = '';
+  cerrarBuscador(clave);
+}
+
+function filtrarBuscador(clave){
+  const b = buscadores[clave];
+  const q = sinAcentos(b.inp.value.trim());
+
+  b.visibles = b.candidatos.filter(function(x){
+    return !q || sinAcentos(x.nombre).indexOf(q) > -1;
+  }).slice(0, 8);
+  b.marcado = -1;
+
+  if(!b.visibles.length){
+    b.lista.innerHTML = '<div class="busca-vacio">Ningún jugador con ese nombre. ' +
+      'Déjalo en blanco si es un invitado sin cuenta.</div>';
+    b.lista.hidden = false;
+    return;
+  }
+
+  b.lista.innerHTML = b.visibles.map(function(x){
+    return '<div class="busca-item" data-pick="' + x.id + '">' + esc(x.nombre) +
+      (x.detalle ? ' <small>' + esc(x.detalle) + '</small>' : '') + '</div>';
+  }).join('');
+  b.lista.hidden = false;
+}
+
+function cerrarBuscador(clave){
+  const b = buscadores[clave];
+  if(b) b.lista.hidden = true;
+}
+
+function elegirEnBuscador(clave, id){
+  const b = buscadores[clave];
+  const x = b.candidatos.find(function(y){ return y.id === id; });
+  if(!x) return;
+  b.inp.value = x.nombre;
+  b.hid.value = x.id;
+  cerrarBuscador(clave);
+  if(b.alElegir) b.alElegir();
+}
+
+function teclasBuscador(clave, e){
+  const b = buscadores[clave];
+  if(b.lista.hidden || !b.visibles.length){
+    if(e.key === 'ArrowDown') filtrarBuscador(clave);
+    return;
+  }
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault();
+    b.marcado += (e.key === 'ArrowDown' ? 1 : -1);
+    if(b.marcado < 0) b.marcado = b.visibles.length - 1;
+    if(b.marcado >= b.visibles.length) b.marcado = 0;
+    Array.prototype.forEach.call(b.lista.children, function(el, i){
+      el.classList.toggle('marcado', i === b.marcado);
+    });
+    return;
+  }
+  if(e.key === 'Enter'){
+    // Con uno solo en la lista, Enter lo elige sin tener que bajar hasta él.
+    const i = b.marcado > -1 ? b.marcado : (b.visibles.length === 1 ? 0 : -1);
+    if(i > -1){ e.preventDefault(); elegirEnBuscador(clave, b.visibles[i].id); }
+    return;
+  }
+  if(e.key === 'Escape'){ cerrarBuscador(clave); }
+}
+
 /* Cuanto se le va a cobrar a quien, antes de reservar. Lo calcula igual que el
    servidor: cada mitad se le carga a alguien si se sabe a quien. */
 function resumirCobroClub(){
@@ -3251,6 +3381,14 @@ function resumirCobroClub(){
     box.textContent = '✓ ' + fmtCLP(precio / 2) + ' a ' + nombres[0] + ', y ' +
       fmtCLP(precio / 2) + ' sin nombre por el invitado. Anota en la nota quién es.';
   } else {
+    // Texto escrito sin elegir de la lista: seguro creyó que ya lo selecciono.
+    const escrito = $('cbNameA').value.trim() || $('cbNameB').value.trim();
+    if(escrito){
+      box.className = 'avail bad';
+      box.textContent = '✕ Elige a "' + escrito + '" de la lista que aparece al escribir, ' +
+        'o borra el campo para dejarlo como invitado sin cuenta.';
+      return;
+    }
     box.textContent = fmtCLP(precio) + ' por la cancha completa, sin cobro a nadie en ' +
       'particular. Anota en la nota quién jugó.';
     box.className = 'avail';
@@ -5633,9 +5771,8 @@ function bindEvents(){
     if(e.key === 'Enter'){ e.preventDefault(); aplicarFiltros(); }
   });
   $('rCat').addEventListener('change', renderRanking);
-  ['cbPlayerA','cbPlayerB'].forEach(function(id){
-    $(id).addEventListener('change', resumirCobroClub);
-  });
+  crearBuscador('cbA', 'cbNameA', 'cbPlayerA', 'cbListA', resumirCobroClub);
+  crearBuscador('cbB', 'cbNameB', 'cbPlayerB', 'cbListB', resumirCobroClub);
   ['cjBuscar','cjFiltro'].forEach(function(id){
     $(id).addEventListener('input', function(){ renderClubPlayers($('clClub').value); });
   });
