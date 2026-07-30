@@ -946,6 +946,92 @@ end $$;
 grant execute on function public.recalc_ratings() to authenticated;
 
 -- =============================================================================
+-- RESULTADO ANOTADO POR EL CLUB
+-- Entre jugadores el resultado lo carga uno y lo confirma el otro, porque nadie
+-- puede inventarse una victoria. Cuando lo anota el club no hay nada que
+-- confirmar: el club vio el partido y es la autoridad del recinto.
+--
+-- Existe por lo mismo que la reserva del club: la autogestion es un cambio de
+-- habito que va a tomar tiempo, y mientras no llegue, si el club no puede anotar
+-- resultados el ranking no se mueve y la app no sirve de nada.
+--
+-- Queda registrado en reported_by quien lo anoto, asi que siempre se puede
+-- distinguir un resultado del club de uno de los jugadores.
+-- =============================================================================
+create or replace function public.club_report_result(
+  p_booking   uuid,
+  p_winner    uuid,
+  p_sets_win  int,
+  p_sets_lose int
+)
+returns public.bookings
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  bk       public.bookings;
+  updated  public.bookings;
+  slot_ts  timestamptz;
+  corrige  boolean;
+begin
+  select * into bk from public.bookings where id = p_booking for update;
+  if bk is null then
+    raise exception 'Esa reserva no existe.';
+  end if;
+  if not public.is_club_admin(bk.club_id) then
+    raise exception 'Solo el administrador del club puede anotar el resultado.';
+  end if;
+  if bk.status <> 'confirmada' then
+    raise exception 'Esa reserva esta cancelada.';
+  end if;
+
+  -- Un resultado mueve el rating de dos jugadores: si uno es invitado sin cuenta
+  -- no hay a quien movérselo. Esos partidos quedan solo como uso de cancha.
+  if bk.player_a is null or bk.player_b is null then
+    raise exception 'Ese partido tiene un invitado sin cuenta: no puede entrar al ranking.';
+  end if;
+  if p_winner not in (bk.player_a, bk.player_b) then
+    raise exception 'El ganador tiene que ser uno de los dos jugadores.';
+  end if;
+
+  if not ((p_sets_win = 3 and p_sets_lose between 0 and 2)
+       or (p_sets_win = 2 and p_sets_lose between 0 and 1)) then
+    raise exception 'Marcador invalido: 3-0, 3-1, 3-2, 2-0 o 2-1.';
+  end if;
+
+  slot_ts := (bk.match_date + bk.match_time::time) at time zone 'America/Santiago';
+  if slot_ts > now() then
+    raise exception 'Ese partido todavia no se juega.';
+  end if;
+
+  corrige := bk.result_status = 'confirmado';
+
+  update public.bookings
+     set winner_id     = p_winner,
+         sets_winner   = p_sets_win,
+         sets_loser    = p_sets_lose,
+         result_status = 'confirmado',
+         reported_by   = auth.uid()
+   where id = bk.id
+  returning * into updated;
+
+  /* Corregir un resultado ya confirmado obliga a rehacer los ratings: el
+     historial se calculo con el resultado anterior y no se puede "restar" un
+     partido sin recalcular la cadena. recalc_ratings() los reconstruye en orden
+     cronologico desde cero. Es caro, pero pasa poco y deja todo consistente. */
+  if corrige then
+    perform public.recalc_ratings();
+  else
+    perform public.apply_elo(updated.id);
+  end if;
+
+  return updated;
+end $$;
+
+grant execute on function public.club_report_result(uuid, uuid, int, int) to authenticated;
+
+-- =============================================================================
 -- 10c. ADMINISTRACION DEL CLUB Y PAGOS
 -- Distinto del administrador de la app: el del club ve solo lo suyo. La cancha
 -- se cobra por jugador (la mitad cada uno), que es como se paga en la practica.

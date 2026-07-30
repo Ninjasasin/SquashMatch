@@ -253,6 +253,9 @@ table{width:100%;border-collapse:collapse;font-size:13.5px}
   display:block;margin-top:5px;font-size:11.5px;color:var(--ink-faint);
   font-style:italic;
 }
+.agenda-res{
+  display:block;margin-top:5px;font-size:12px;font-weight:700;color:var(--lime);
+}
 .contrapropuesta{color:var(--ink-faint);font-size:11.5px;text-decoration:line-through}
 th{
   background:var(--panel-2);text-align:left;padding:11px 14px;font-size:11px;
@@ -1222,6 +1225,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div id="gMapa"></div>
       </div>
 
+      <div class="box" id="gSinResultadoCaja">
+        <p class="section-title">Partidos sin resultado</p>
+        <p class="note">Ya se jugaron y nadie anotó quién ganó, así que no movieron el
+          ranking. Al cierre del día se llenan de acá, sin ir buscándolos por fecha.</p>
+        <div id="gSinResultado"></div>
+      </div>
+
       <div class="box" id="gMarcadosCaja">
         <p class="section-title">Marcados para no llamar</p>
         <p class="note">Anotaciones internas del club. Al jugador no le cambia nada: sigue
@@ -1484,7 +1494,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   <div class="modal">
     <div class="modal-head">
       <div>
-        <h2>Registrar resultado</h2>
+        <h2 id="rsTitulo">Registrar resultado</h2>
         <p id="rsSub"></p>
       </div>
       <button class="x" data-close="resultModal">&times;</button>
@@ -1505,8 +1515,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         </select>
         <span class="hint">Solo sets: los parciales de cada game no se piden.</span>
       </div>
-      <div class="auth-note">Tu rival tiene que confirmar este resultado. Hasta que lo
-        haga, no cuenta para las estadísticas ni mueve el ranking.</div>
+      <div class="auth-note" id="rsNota"></div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close="resultModal">Cancelar</button>
@@ -2484,6 +2493,20 @@ async function reportResult(bookingId, winnerId, sets){
   return { ok:true };
 }
 
+/* El club anota el resultado sin que nadie tenga que confirmarlo: vio el partido
+   y es la autoridad del recinto. Entre jugadores sigue haciendo falta que el
+   rival lo acepte, porque ahi si alguien podria inventarse una victoria. */
+async function clubReportResult(bookingId, winnerId, sets){
+  const partes = String(sets).split('-');
+  const { error } = await sb.rpc('club_report_result', {
+    p_booking:bookingId, p_winner:winnerId,
+    p_sets_win:parseInt(partes[0], 10), p_sets_lose:parseInt(partes[1], 10)
+  });
+  if(error) return { ok:false, reason:error.message };
+  await refresh();
+  return { ok:true };
+}
+
 /** El rival acepta o rechaza lo que cargó el otro. Recién al aceptar cuenta. */
 async function confirmResult(bookingId, accept){
   const { error } = await sb.rpc('confirm_result', { p_booking:bookingId, p_accept:accept });
@@ -2946,7 +2969,17 @@ function renderClub(){
         (b.source === 'club' && !a && !bb ? '<span class="chip">sin cuenta</span>' : '') +
         (notaDe(b.id) ? '<span class="agenda-nota">' + esc(notaDe(b.id)) + '</span>' : '') +
         cobros.map(function(x){ return pagoChip(x, true); }).join('') +
+        (b.result
+          ? '<span class="agenda-res">' + esc((player(b.result.winnerId) || {}).name || '') +
+            ' ' + esc(b.result.sets) + '</span>'
+          : '') +
         '<span class="btn-row" style="margin-top:8px">' +
+          // El resultado solo se puede anotar si el partido ya se jugo y los dos
+          // jugadores tienen cuenta: sin rating no hay nada que mover.
+          (a && bb && isPast(b.date, b.time)
+            ? '<button class="btn primary sm" data-clubresult="' + b.id + '">' +
+              (b.result ? 'Corregir' : 'Resultado') + '</button>'
+            : '') +
           '<button class="btn ghost sm" data-clubnote="' + b.id + '">' +
             (notaDe(b.id) ? 'Nota' : 'Nota +') + '</button>' +
           (b.source === 'club'
@@ -3475,6 +3508,45 @@ function quienJuegaEn(clubId, dias, ventana, dia, incluirFinde){
     });
 }
 
+/* Los partidos jugados que quedaron sin resultado. Es la lista de trabajo del
+   cierre del dia: con el club anotando por todos, si no se ven juntos se pierden.
+   Solo los de dos jugadores con cuenta: los de invitados no entran al ranking. */
+function renderSinResultado(clubId){
+  const pendientes = state.bookings.filter(function(b){
+    return b.clubId === clubId && b.status === 'confirmada' &&
+           b.playerA && b.playerB && !b.result && isPast(b.date, b.time);
+  }).sort(function(x, y){
+    return (y.date + y.time).localeCompare(x.date + x.time);
+  });
+
+  if(!pendientes.length){
+    $('gSinResultadoCaja').hidden = true;
+    return;
+  }
+  $('gSinResultadoCaja').hidden = false;
+
+  const visibles = pendientes.slice(0, 12);
+  $('gSinResultado').innerHTML = '<div class="rank-list">' + visibles.map(function(b){
+    const a = player(b.playerA), bb = player(b.playerB);
+    const dias = diasDesde(b.date);
+    return '<div class="rank-item">' +
+      '<div class="avatar alt">' + esc(initials(a ? a.name : '?')) + '</div>' +
+      '<div class="grow">' +
+        '<div>' + esc(a ? a.name : '?') + ' vs ' + esc(bb ? bb.name : '?') +
+          (b.reporte ? ' <span class="chip">cargado, sin confirmar</span>' : '') + '</div>' +
+        '<small>' + esc(fmtDate(b.date)) + ' · ' + b.time + ' · cancha ' + b.court +
+          ' · ' + (dias === 0 ? 'hoy' : 'hace ' + dias + (dias === 1 ? ' día' : ' días')) +
+          '</small>' +
+      '</div>' +
+      '<button class="btn primary sm" data-clubresult="' + b.id + '">Anotar</button>' +
+    '</div>';
+  }).join('') + '</div>' +
+    (pendientes.length > visibles.length
+      ? '<p class="note" style="margin-top:12px">Y ' +
+        (pendientes.length - visibles.length) + ' más atrás en el tiempo.</p>'
+      : '');
+}
+
 /* Las marcas ya vencidas se siguen listando, atenuadas: sirve para saber que
    estuvo marcado y decidir si se renueva o se borra. */
 /* El listado completo, que es de donde el club elige a quién avisarle. La lista
@@ -3713,6 +3785,7 @@ function renderGestion(clubId){
     '</tr></thead><tbody>' + filas + '</tbody></table></div>' +
     (maximo ? '' : '<div class="empty" style="margin-top:12px">Sin reservas en el período.</div>');
 
+  renderSinResultado(clubId);
   renderMarcados(clubId);
   renderVentana(clubId, dias);
 
@@ -5078,17 +5151,40 @@ function updateAvail(){
   $('chSend').disabled = !check.ok;
 }
 
-function openResult(bookingId){
+/* comoClub: lo anota el mostrador y queda confirmado al instante. El aviso al pie
+   del modal cambia, porque decir "tu rival tiene que confirmar" seria falso. */
+function openResult(bookingId, comoClub){
   const b = state.bookings.find(function(x){ return x.id === bookingId; });
   if(!b) return;
   const a = player(b.playerA), bb = player(b.playerB);
   const c = club(b.clubId);
-  $('rsSub').textContent = (a?a.name:'?') + ' vs ' + (bb?bb.name:'?') + ' — ' + fmtDate(b.date) + ' ' + b.time + (c ? ' · '+c.name : '');
+
+  $('rsTitulo').textContent = comoClub ? 'Anotar resultado' : 'Registrar resultado';
+  $('rsSub').textContent = (a?a.name:'?') + ' vs ' + (bb?bb.name:'?') + ' — ' +
+    fmtDate(b.date) + ' ' + b.time + (c ? ' · '+c.name : '');
   $('rsWinner').innerHTML =
     '<option value="'+b.playerA+'">'+esc(a?a.name:'?')+'</option>' +
     '<option value="'+b.playerB+'">'+esc(bb?bb.name:'?')+'</option>';
-  $('rsSets').value = '3-1';
+
+  if(b.result){
+    $('rsWinner').value = b.result.winnerId;
+    $('rsSets').value = b.result.sets;
+  } else {
+    $('rsSets').value = '3-1';
+  }
+
+  $('rsNota').innerHTML = comoClub
+    ? (b.result
+        ? '<b>Est&aacute;s corrigiendo un resultado ya confirmado.</b> Al guardarlo se ' +
+          'recalculan los ratings de todos desde cero, en orden, para que la cadena ' +
+          'quede consistente.'
+        : 'Lo anota el club, as&iacute; que queda confirmado al instante y mueve el ' +
+          'ranking. No hace falta que los jugadores lo aprueben.')
+    : 'Tu rival tiene que confirmar este resultado. Hasta que lo haga, no cuenta ' +
+      'para las estad&iacute;sticas ni mueve el ranking.';
+
   $('rsSave').dataset.booking = bookingId;
+  $('rsSave').dataset.club = comoClub ? '1' : '';
   openModal('resultModal');
 }
 
@@ -5626,7 +5722,7 @@ function bindEvents(){
       '[data-rejectinvite],[data-cancelinvite],' +
       '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
       '[data-vermas],[data-vermenos],[data-marcar],[data-avisar],' +
-      '[data-tomaraviso],[data-avisovisto],[data-clave]');
+      '[data-tomaraviso],[data-avisovisto],[data-clave],[data-clubresult]');
     if(!el) return;
     const d = el.dataset;
 
@@ -5652,6 +5748,7 @@ function bindEvents(){
     }
     if(d.tomaraviso){ tomarAviso(d.tomaraviso); return; }
     if(d.result){ openResult(d.result); return; }
+    if(d.clubresult){ openResult(d.clubresult, true); return; }
 
     // Las que escriben en la base bloquean el boton mientras viajan.
     el.disabled = true;
@@ -5870,11 +5967,21 @@ function bindEvents(){
   // Modal resultado
   $('rsSave').addEventListener('click', async function(){
     const bookingId = this.dataset.booking;
+    const comoClub = !!this.dataset.club;
     this.disabled = true;
-    const res = await reportResult(bookingId, $('rsWinner').value, $('rsSets').value);
+    const res = comoClub
+      ? await clubReportResult(bookingId, $('rsWinner').value, $('rsSets').value)
+      : await reportResult(bookingId, $('rsWinner').value, $('rsSets').value);
     this.disabled = false;
     if(!res.ok){ toast(res.reason, true); return; }
     closeModal('resultModal');
+
+    if(comoClub){
+      const g = player($('rsWinner').value);
+      toast('Resultado anotado: gana ' + (g ? g.name : 'el jugador') +
+            ' ' + $('rsSets').value + '. Ya movió el ranking.');
+      return;
+    }
     const b = state.bookings.find(function(x){ return x.id === bookingId; });
     const otro = b ? player(b.playerA === me().id ? b.playerB : b.playerA) : null;
     toast('Resultado enviado. Queda esperando que ' +
