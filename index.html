@@ -526,10 +526,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 /* Las dos descargas van juntas, el selector pegado al boton, para que se lea
    como una sola accion y no como dos controles suelto. */
 .descargas{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.descargas select{
+.descargas label{font-size:12px;color:var(--ink-faint)}
+.descargas select,.descargas input{
   background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
   border-radius:9px;padding:8px 10px;font-size:13px;font-family:inherit;
 }
+.descargas input[type="date"]{padding:7px 10px}
 .seg-btn{
   border:none;background:none;color:var(--ink-dim);font-size:13.5px;font-weight:600;
   padding:9px 16px;border-radius:9px;cursor:pointer;white-space:nowrap;
@@ -1045,6 +1047,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
           <option value="cobranza">Estado de cuenta</option>
           <option value="turnos">Reporte de turnos</option>
         </select>
+        <label for="exportDesde">Desde</label>
+        <input id="exportDesde" type="date">
+        <label for="exportHasta">hasta</label>
+        <input id="exportHasta" type="date">
         <button class="btn sm" id="btnExport">Descargar</button>
       </div>
     </div>
@@ -3150,12 +3156,18 @@ function csvCampo(v){
   return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
 }
 
-function descargarEstadoCuenta(clubId){
+function descargarEstadoCuenta(clubId, rango){
   const c = club(clubId);
   if(!c) return;
 
   const filas = state.payments
-    .filter(function(x){ return x.clubId === clubId; })
+    .filter(function(x){
+      if(x.clubId !== clubId) return false;
+      const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
+      // Se filtra por la fecha del partido y no por la del pago: "la cobranza de
+      // julio" son los partidos de julio, aunque alguno se pague en agosto.
+      return b && b.date >= rango.desde && b.date <= rango.hasta;
+    })
     .map(function(x){
       const b = state.bookings.find(function(y){ return y.id === x.bookingId; });
       const j = x.playerId ? player(x.playerId) : null;
@@ -3170,6 +3182,7 @@ function descargarEstadoCuenta(clubId){
         cancha: b ? b.court : '',
         monto: x.amount,
         atraso: (b && x.status === 'pendiente') ? diasDesde(b.date) : '',
+        pagado: x.paidAt ? isoOf(new Date(x.paidAt)) : '',
         nota: b ? notaDe(b.id) : '',
         origen: b && b.source === 'club' ? 'reserva del club' : 'reserva por la app'
       };
@@ -3179,18 +3192,23 @@ function descargarEstadoCuenta(clubId){
       return String(b.fecha).localeCompare(String(a.fecha));
     });
 
-  const cabecera = ['Estado','Jugador','Rival','Fecha','Hora','Cancha','Monto',
-                    'Dias de atraso','Nota','Origen'];
+  const cabecera = ['Estado','Jugador','Rival','Fecha del partido','Hora','Cancha','Monto',
+                    'Dias de atraso','Fecha de pago','Nota','Origen'];
   const cuerpo = filas.map(function(f){
     return [f.estado, f.jugador, f.rival, f.fecha, f.hora, f.cancha,
-            f.monto, f.atraso, f.nota, f.origen].map(csvCampo).join(';');
+            f.monto, f.atraso, f.pagado, f.nota, f.origen].map(csvCampo).join(';');
   });
 
   const pend = filas.filter(function(f){ return f.estado === 'pendiente'; });
   const total = pend.reduce(function(a, f){ return a + f.monto; }, 0);
+  const cobrado = filas.filter(function(f){ return f.estado === 'pagado'; })
+                       .reduce(function(a, f){ return a + f.monto; }, 0);
   const resumen = [
     '',
-    ['RESUMEN', c.name, 'al ' + fmtDateLong(todayISO())].map(csvCampo).join(';'),
+    ['RESUMEN', c.name].map(csvCampo).join(';'),
+    ['Periodo', 'partidos ' + textoRango(rango)].map(csvCampo).join(';'),
+    ['Movimientos', filas.length].map(csvCampo).join(';'),
+    ['Recaudado', cobrado].map(csvCampo).join(';'),
     ['Cobros pendientes', pend.length].map(csvCampo).join(';'),
     ['Total por cobrar', total].map(csvCampo).join(';')
   ];
@@ -3201,10 +3219,24 @@ function descargarEstadoCuenta(clubId){
     .concat(cuerpo).concat(resumen).join('\r\n');
 
   const nombre = 'cobranza-' + c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
-                 '-' + todayISO() + '.csv';
+                 '-' + rango.desde + '_' + rango.hasta + '.csv';
 
   descargarTexto(texto, nombre);
-  return { filas:filas.length, pendientes:pend.length, total:total, nombre:nombre };
+  return { filas:filas.length, pendientes:pend.length, total:total,
+           cobrado:cobrado, nombre:nombre };
+}
+
+/* El rango de las descargas. Arranca en el primer dia del mes corriente porque
+   "la cobranza de julio" es como piensa el club, no "los ultimos 30 dias". */
+function rangoDescarga(){
+  const desde = $('exportDesde').value, hasta = $('exportHasta').value;
+  if(!desde || !hasta) return null;
+  if(hasta < desde) return null;
+  return { desde:desde, hasta:hasta };
+}
+
+function textoRango(r){
+  return 'del ' + fmtDate(r.desde) + ' al ' + fmtDate(r.hasta);
 }
 
 /** Bajar un texto como archivo. Lo comparten las dos descargas. */
@@ -3223,12 +3255,11 @@ function descargarTexto(texto, nombre){
 /* El mismo reporte que se ve en pantalla, pero en planilla y respetando el
    periodo elegido: sirve para llevarlo a la reunion de los ejecutivos, que es
    donde se revisa el bono. */
-function descargarReporteTurnos(clubId){
+function descargarReporteTurnos(clubId, rango){
   const c = club(clubId);
   if(!c) return;
 
-  const dias = parseInt($('rpPeriodo').value, 10) || 30;
-  const serie = turnosPorDia(clubId, dias);
+  const serie = turnosPorDia(clubId, rango.desde, rango.hasta);
   const techo = c.courts * slotsOf(clubId).length;
 
   const cabecera = ['Fecha','Dia','Turnos','Meta','Diferencia','Cumplio',
@@ -3253,13 +3284,22 @@ function descargarReporteTurnos(clubId){
   const cumplen  = serie.filter(function(x){ return x.total >= x.meta; }).length;
   const promedio = (total / serie.length).toFixed(1).replace('.', ',');
 
+  /* Un rango elegido a mano puede incluir dias que todavia no ocurren, y esos
+     salen sin turnos y cuentan como meta no cumplida. Se descuentan y se dicen
+     aparte, para que nadie lea un "0 de 31" creyendo que el mes fue malo. */
+  const hoy = todayISO();
+  const futuros = serie.filter(function(x){ return x.iso > hoy; }).length;
+
   const resumen = [
     '',
     ['RESUMEN', c.name].map(csvCampo).join(';'),
-    ['Periodo', 'últimos ' + dias + ' días, al ' + fmtDateLong(todayISO())].map(csvCampo).join(';'),
+    ['Periodo', textoRango(rango)].map(csvCampo).join(';'),
+    ['Dias del periodo', serie.length +
+      (futuros ? ' (' + futuros + ' aun no ocurren)' : '')].map(csvCampo).join(';'),
     ['Turnos reservados', total].map(csvCampo).join(';'),
     ['Promedio diario', promedio].map(csvCampo).join(';'),
-    ['Dias con la meta cumplida', cumplen + ' de ' + serie.length].map(csvCampo).join(';'),
+    ['Dias con la meta cumplida',
+     cumplen + ' de ' + (serie.length - futuros)].map(csvCampo).join(';'),
     ['Reservado por la app', (total ? Math.round(porApp / total * 100) : 0) + '%'].map(csvCampo).join(';'),
     ['Turnos disponibles al dia', techo].map(csvCampo).join(';')
   ];
@@ -3270,10 +3310,11 @@ function descargarReporteTurnos(clubId){
     .concat(cuerpo).concat(resumen).join('\r\n');
 
   const nombre = 'turnos-' + c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
-                 '-' + dias + 'd-' + todayISO() + '.csv';
+                 '-' + rango.desde + '_' + rango.hasta + '.csv';
 
   descargarTexto(texto, nombre);
-  return { dias:dias, total:total, cumplen:cumplen, de:serie.length, nombre:nombre };
+  return { total:total, cumplen:cumplen, de:serie.length - futuros,
+           futuros:futuros, nombre:nombre };
 }
 
 /* La configuración no se vuelve a cargar mientras haya cambios sin guardar: el
@@ -3513,16 +3554,19 @@ function renderClubInfo(c){
    saber si llegaron a su meta del día. Un turno es una cancha tomada en un
    bloque; con dos canchas y 22 turnos cada una, el techo diario es 44.
    Las canceladas no cuentan: la cancha quedó libre. */
-function turnosPorDia(clubId, dias){
+/* Recibe un rango de fechas y no una cantidad de dias, porque el club piensa en
+   "julio" y no en "los ultimos 30 dias". La pantalla le pasa un rango calculado
+   desde su selector de periodo; la descarga, el que se eligio a mano. */
+function turnosPorDia(clubId, desdeISO, hastaISO){
   const serie = [], porFecha = {};
-  for(let d = dias - 1; d >= 0; d--){
-    const day = new Date();
-    day.setDate(day.getDate() - d);
-    const iso = isoOf(day);
-    const fila = { iso:iso, dow:day.getDay(), total:0, app:0, club:0,
+  const cursor = parseISO(desdeISO), fin = parseISO(hastaISO);
+  while(cursor <= fin){
+    const iso = isoOf(cursor);
+    const fila = { iso:iso, dow:cursor.getDay(), total:0, app:0, club:0,
                    meta:metaDelDia(clubId, iso) };
     serie.push(fila);
     porFecha[iso] = fila;
+    cursor.setDate(cursor.getDate() + 1);
   }
 
   state.bookings.forEach(function(b){
@@ -3540,7 +3584,9 @@ function renderReporte(clubId){
   const c = club(clubId);
   if(!c) return;
   const dias = parseInt($('rpPeriodo').value, 10) || 30;
-  const serie = turnosPorDia(clubId, dias);
+  const desde = new Date();
+  desde.setDate(desde.getDate() - (dias - 1));
+  const serie = turnosPorDia(clubId, isoOf(desde), todayISO());
   const hoy = serie[serie.length - 1];
 
   const total    = serie.reduce(function(a, x){ return a + x.total; }, 0);
@@ -5905,6 +5951,11 @@ function initControls(){
   // La agenda del club mira hacia atrás también: los cobros atrasados están ahí.
   $('clDate').max = mx;
   $('clDate').value = t;
+
+  /* El rango de descarga arranca en el primer día del mes corriente: "la cobranza
+     de julio" es como piensa el club, no "los últimos 30 días". */
+  $('exportDesde').value = t.slice(0, 8) + '01';
+  $('exportHasta').value = t;
 }
 
 /** Cambia de pestaña. También la usan los accesos directos de Inicio. */
@@ -5995,17 +6046,27 @@ function bindEvents(){
   });
 
   $('btnExport').addEventListener('click', function(){
+    const rango = rangoDescarga();
+    if(!rango){
+      toast('Revisa las fechas: la de término no puede ser anterior a la de inicio.', true);
+      return;
+    }
     const clubId = $('clClub').value;
+
     if($('exportQue').value === 'turnos'){
-      const r = descargarReporteTurnos(clubId);
+      const r = descargarReporteTurnos(clubId, rango);
       if(r){
-        toast('Descargado: ' + r.dias + ' días, ' + r.total + ' turnos, meta cumplida ' +
-              r.cumplen + ' de ' + r.de + '.');
+        toast('Descargado: ' + r.total + ' turnos, meta cumplida ' + r.cumplen +
+              ' de ' + r.de + ' días' +
+              (r.futuros ? ' (' + r.futuros + ' del rango aún no ocurren)' : '') + '.');
       }
       return;
     }
-    const r = descargarEstadoCuenta(clubId);
-    if(r) toast('Descargado: ' + r.filas + ' movimientos, ' + fmtCLP(r.total) + ' por cobrar.');
+    const r = descargarEstadoCuenta(clubId, rango);
+    if(r){
+      toast('Descargado: ' + r.filas + ' movimientos, ' + fmtCLP(r.cobrado) +
+            ' recaudado y ' + fmtCLP(r.total) + ' por cobrar.');
+    }
   });
 
   $('clubSeg').addEventListener('click', function(e){
