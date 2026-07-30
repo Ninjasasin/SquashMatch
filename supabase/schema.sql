@@ -1204,6 +1204,88 @@ end $$;
 
 grant execute on function public.club_contacto(text, uuid) to authenticated;
 
+-- =============================================================================
+-- CORREGIR LOS DATOS DE UN SOCIO
+-- El club escribio la ficha, asi que tiene que poder arreglarla: los telefonos
+-- cambian, las categorias suben y en el mostrador se cometen errores de tipeo.
+-- Sin esto, un numero mal escrito no hay como corregirlo y el socio se vuelve
+-- inalcanzable.
+--
+-- Dos cosas quedan fuera a proposito:
+--
+--   member_id  el ID es con lo que el socio entra, y por detras define su correo
+--              interno en Supabase. Cambiarlo aca dejaria la cuenta sin poder
+--              iniciar sesion, porque el correo de autenticacion no se toca desde
+--              la base. Si hay que cambiarlo, se crea otro socio.
+--
+--   club_id    solo se puede mover entre clubes que el mismo administrador
+--              maneje. Si no, un club podria llevarse a los socios de otro.
+-- =============================================================================
+create or replace function public.club_editar_socio(
+  p_player   uuid,
+  p_club     text,
+  p_name     text,
+  p_rut      text,
+  p_phone    text,
+  p_category text,
+  p_comuna   text,
+  p_hand     text
+)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actual public.profiles;
+  limpio text := public.normalizar_rut(p_rut);
+  fila   public.profiles;
+begin
+  select * into actual from public.profiles where id = p_player;
+  if actual is null then
+    raise exception 'Ese socio no existe.';
+  end if;
+  if actual.staff then
+    raise exception 'La cuenta de administracion no se edita desde aca.';
+  end if;
+
+  -- Tiene que administrar el club de origen y el de destino.
+  if not public.is_club_admin(coalesce(actual.club_id, p_club)) then
+    raise exception 'Ese socio no es de un club que administres.';
+  end if;
+  if not public.is_club_admin(p_club) then
+    raise exception 'No administras ese club.';
+  end if;
+
+  if btrim(coalesce(p_name, '')) = '' then
+    raise exception 'El socio necesita nombre.';
+  end if;
+  if limpio is null or not public.rut_valido(limpio) then
+    raise exception 'Ese RUT no es valido. Revisa el numero y el digito verificador.';
+  end if;
+  if exists (select 1 from public.profiles
+              where rut = limpio and id <> p_player) then
+    raise exception 'Ese RUT ya esta registrado en otro socio.';
+  end if;
+
+  update public.profiles
+     set name     = btrim(p_name),
+         rut      = limpio,
+         phone    = coalesce(p_phone, ''),
+         category = p_category,
+         comuna   = coalesce(p_comuna, ''),
+         hand     = coalesce(nullif(btrim(p_hand), ''), 'Diestro'),
+         club_id  = p_club
+   where id = p_player
+  returning * into fila;
+
+  return fila;
+end $$;
+
+grant execute on function public.club_editar_socio(
+  uuid, text, text, text, text, text, text, text
+) to authenticated;
+
 -- Resetear la clave de un socio que la perdió NO se puede hacer desde el
 -- navegador: cambiar la contraseña de otra persona necesita la llave de
 -- administración de Supabase, que no puede vivir en el código de la app. Queda

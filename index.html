@@ -1575,9 +1575,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   <div class="modal">
     <div class="modal-head">
       <div>
-        <h2>Crear socio</h2>
-        <p>El RUT es la llave: si el socio ya existe —incluso de años atrás— la base no
-          deja duplicarlo y recupera su historial.</p>
+        <h2 id="scTitulo">Crear socio</h2>
+        <p id="scSub">El RUT es la llave: si el socio ya existe —incluso de años atrás— la
+          base no deja duplicarlo y recupera su historial.</p>
       </div>
       <button class="x" data-close="socioModal">&times;</button>
     </div>
@@ -1597,16 +1597,28 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div class="field">
           <label for="scPhone">Teléfono</label>
           <input id="scPhone" type="tel" placeholder="+56 9 …" autocomplete="off">
+          <span class="hint">Con esto se le puede escribir por WhatsApp.</span>
         </div>
         <div class="field">
           <label for="scCat">Categoría</label>
           <select id="scCat"></select>
         </div>
       </div>
+      <div class="two">
+        <div class="field">
+          <label for="scComuna">Comuna</label>
+          <input id="scComuna" type="text" placeholder="Ej: Las Condes" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="scHand">Mano hábil</label>
+          <select id="scHand"><option>Diestro</option><option>Zurdo</option></select>
+        </div>
+      </div>
       <div class="field">
         <label for="scMember">ID de socio</label>
         <input id="scMember" type="text" autocomplete="off" spellcheck="false">
-        <span class="hint">Se propone desde el nombre. Se puede cambiar si ya existe.</span>
+        <span class="hint" id="scMemberHint">Se propone desde el nombre. Se puede cambiar
+          si ya existe.</span>
       </div>
       <div class="avail" id="scAvail"></div>
 
@@ -3754,6 +3766,7 @@ function renderClubPlayers(clubId){
           'data-marcar="' + clubId + '|' + j.id + '">' +
           (guardada ? 'Ver marca' : 'No llamar') + '</button>' +
         // Solo los socios tienen ID: las cuentas viejas con correo no se resetean acá.
+        '<button class="btn sm" data-editarsocio="' + j.id + '">Editar</button>' +
         (j.memberId
           ? '<button class="btn sm" data-clave="' + j.id + '">Clave nueva</button>'
           : '') +
@@ -5087,8 +5100,65 @@ async function resetearClave(playerId){
   return { ok:true, memberId:data.member_id, name:data.name, clave:data.clave };
 }
 
+async function editarSocio(playerId, clubId, datos){
+  const { error } = await sb.rpc('club_editar_socio', {
+    p_player:playerId, p_club:clubId,
+    p_name:datos.name, p_rut:datos.rut, p_phone:datos.phone,
+    p_category:datos.category, p_comuna:datos.comuna, p_hand:datos.hand
+  });
+  await refresh();
+  return error ? { ok:false, reason:error.message } : { ok:true };
+}
+
+/* El mismo modal crea y corrige. socioEditando dice en qué modo va: el ID de
+   socio no se puede cambiar, porque es con lo que entra y por detrás define su
+   correo interno en Supabase. */
+let socioEditando = null;
+
+function openSocioEditar(playerId){
+  const j = player(playerId);
+  if(!j) return;
+  socioEditando = playerId;
+
+  $('scTitulo').textContent = 'Editar socio';
+  $('scSub').textContent = 'Corrige lo que esté mal. El ID de socio no se cambia: es con ' +
+    'lo que entra a la app.';
+  $('scName').value   = j.name;
+  $('scPhone').value  = '';
+  $('scComuna').value = j.comuna || '';
+  $('scHand').value   = j.hand || 'Diestro';
+  $('scCat').value    = j.category || CATEGORIES[0];
+  $('scMember').value = j.memberId || '';
+  $('scMember').disabled = true;
+  $('scMemberHint').textContent = 'No se puede cambiar: es con lo que el socio entra.';
+  $('scRut').value = '';
+  $('scRutHint').textContent = '';
+  $('scEntrega').hidden = true;
+  $('scSave').hidden = false;
+  $('scSave').textContent = 'Guardar cambios';
+  $('scAvail').className = 'avail';
+  $('scAvail').textContent = 'Escribe el RUT para confirmar de quién es la ficha.';
+
+  // El telefono esta protegido: se pide aparte igual que para el WhatsApp.
+  sb.rpc('club_contacto', { p_club:$('clClub').value, p_player:playerId }).then(function(r){
+    if(socioEditando !== playerId) return;
+    const fila = (!r.error && r.data && r.data[0]) ? r.data[0] : null;
+    if(fila) $('scPhone').value = fila.phone || '';
+  });
+
+  openModal('socioModal');
+  setTimeout(function(){ $('scName').focus(); }, 40);
+}
+
 function openSocio(){
-  ['scName','scRut','scPhone','scMember'].forEach(function(id){ $(id).value = ''; });
+  socioEditando = null;
+  $('scTitulo').textContent = 'Crear socio';
+  $('scSub').textContent = 'El RUT es la llave: si el socio ya existe —incluso de años ' +
+    'atrás— la base no deja duplicarlo y recupera su historial.';
+  ['scName','scRut','scPhone','scMember','scComuna'].forEach(function(id){ $(id).value = ''; });
+  $('scMember').disabled = false;
+  $('scMemberHint').textContent = 'Se propone desde el nombre. Se puede cambiar si ya existe.';
+  $('scHand').value = 'Diestro';
   $('scCat').value = CATEGORIES[0];
   $('scRutHint').textContent = '';
   $('scEntrega').hidden = true;
@@ -5126,11 +5196,20 @@ async function revisarRut(){
 
   if(res.data && res.data.length){
     const y = res.data[0];
+    // Editando, que el RUT sea del mismo socio es lo correcto, no un choque.
+    if(socioEditando && y.id === socioEditando){
+      box.className = 'avail ok';
+      box.textContent = '✓ Es el RUT de ' + y.name + '.';
+      return;
+    }
     box.className = 'avail bad';
     box.textContent = '✕ Ese RUT ya es socio: ' + y.name +
       (y.member_id ? ' (' + y.member_id + ')' : '') +
       (y.last_played ? ' · última vez que jugó el ' + fmtDate(y.last_played) : ' · sin partidos') +
       '. No hace falta crearlo de nuevo.';
+  } else if(socioEditando){
+    box.className = 'avail ok';
+    box.textContent = '✓ RUT libre. Se le va a asignar a este socio.';
   } else {
     box.className = 'avail ok';
     box.textContent = '✓ RUT libre.';
@@ -5914,7 +5993,8 @@ function bindEvents(){
       '[data-rejectinvite],[data-cancelinvite],' +
       '[data-pay],[data-unpay],[data-clubbook],[data-clubnote],[data-clubcancel],' +
       '[data-vermas],[data-vermenos],[data-marcar],[data-avisar],' +
-      '[data-tomaraviso],[data-avisovisto],[data-clave],[data-clubresult]');
+      '[data-tomaraviso],[data-avisovisto],[data-clave],[data-clubresult],' +
+      '[data-editarsocio]');
     if(!el) return;
     const d = el.dataset;
 
@@ -5941,6 +6021,7 @@ function bindEvents(){
     if(d.tomaraviso){ tomarAviso(d.tomaraviso); return; }
     if(d.result){ openResult(d.result); return; }
     if(d.clubresult){ openResult(d.clubresult, true); return; }
+    if(d.editarsocio){ openSocioEditar(d.editarsocio); return; }
 
     // Las que escriben en la base bloquean el boton mientras viajan.
     el.disabled = true;
@@ -6065,11 +6146,28 @@ function bindEvents(){
     const nombre = $('scName').value.trim();
     const memberId = $('scMember').value.trim().toLowerCase();
     if(nombre.length < 3){ toast('Escribe el nombre completo del socio.', true); return; }
-    if(!/^[a-z0-9.]{3,40}$/.test(memberId)){
-      toast('El ID de socio solo admite letras, números y puntos.', true); return;
-    }
     if(!rutValido($('scRut').value)){
       toast('Revisa el RUT: el dígito verificador no cuadra.', true); return;
+    }
+
+    /* --- Corrigiendo una ficha que ya existe --- */
+    if(socioEditando){
+      this.disabled = true;
+      const res = await editarSocio(socioEditando, $('clClub').value, {
+        name:nombre, rut:$('scRut').value, phone:$('scPhone').value.trim(),
+        category:$('scCat').value, comuna:$('scComuna').value.trim(),
+        hand:$('scHand').value
+      });
+      this.disabled = false;
+      if(!res.ok){ toast(res.reason, true); return; }
+      closeModal('socioModal');
+      renderClubPlayers($('clClub').value);
+      toast('Datos actualizados.');
+      return;
+    }
+
+    if(!/^[a-z0-9.]{3,40}$/.test(memberId)){
+      toast('El ID de socio solo admite letras, números y puntos.', true); return;
     }
 
     this.disabled = true;
