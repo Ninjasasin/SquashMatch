@@ -1162,6 +1162,48 @@ end $$;
 
 grant execute on function public.socio_por_rut(text, text) to authenticated;
 
+-- =============================================================================
+-- CONTACTO DE UN SOCIO, PARA EL CLUB
+-- El telefono no va en el SELECT general: entre jugadores solo se entrega cuando
+-- hay una reserva confirmada entre los dos, por contact_of().
+--
+-- El club es otro caso. Tiene el telefono de sus socios de antes —de hecho lo
+-- escribe el mismo al crear la ficha— y lo necesita para avisar que hay cancha
+-- libre. Igual va por funcion y no abriendo la columna: asi el acceso queda
+-- limitado a los socios de ese club y no a toda la tabla.
+--
+-- El vinculo tiene que existir: o el socio tiene a ese club como sede, o jugo
+-- ahi. Un club no puede sacar los telefonos de los jugadores de otro.
+-- =============================================================================
+create or replace function public.club_contacto(p_club text, p_player uuid)
+returns table (phone text, email text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_club_admin(p_club) then
+    raise exception 'Solo el administrador del club puede ver el contacto de sus socios.';
+  end if;
+
+  return query
+    select p.phone, p.email
+      from public.profiles p
+     where p.id = p_player
+       and not p.staff
+       and (
+         p.club_id = p_club
+         or exists (
+           select 1 from public.bookings b
+            where b.club_id = p_club
+              and b.status = 'confirmada'
+              and (b.player_a = p.id or b.player_b = p.id)
+         )
+       );
+end $$;
+
+grant execute on function public.club_contacto(text, uuid) to authenticated;
+
 -- Resetear la clave de un socio que la perdió NO se puede hacer desde el
 -- navegador: cambiar la contraseña de otra persona necesita la llave de
 -- administración de Supabase, que no puede vivir en el código de la app. Queda

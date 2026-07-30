@@ -1659,10 +1659,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <span class="hint">Se arma solo con lo de arriba. Puedes cambiarlo.</span>
       </div>
       <div class="avail" id="nfAvail"></div>
+      <p class="hint" id="nfTel" style="margin-top:12px"></p>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close="notifyModal">Cancelar</button>
-      <button class="btn primary" id="nfSend">Enviar aviso</button>
+      <a class="btn" id="nfWhatsapp" target="_blank" rel="noopener noreferrer" hidden>WhatsApp</a>
+      <button class="btn primary" id="nfSend">Avisar en la app</button>
     </div>
   </div>
 </div>
@@ -5135,6 +5137,34 @@ async function revisarRut(){
   }
 }
 
+/* =========================================================
+   AVISO POR WHATSAPP
+   ---------------------------------------------------------
+   Un enlace wa.me, no la API de WhatsApp Business. Abre la aplicacion con el
+   mensaje ya escrito y la persona del mostrador aprieta enviar.
+
+   Es a proposito la version simple: no cuesta nada por mensaje, no necesita
+   verificar la empresa ante Meta, no necesita plantillas aprobadas ni un numero
+   dedicado, y usa el WhatsApp que el club ya tiene. La API se justifica cuando
+   sepamos cuantos avisos diarios manda de verdad.
+
+   Y la app nunca envia sola: solo prepara el mensaje. El envio lo hace una
+   persona, en su WhatsApp. */
+function telefonoWhatsapp(tel){
+  let d = String(tel || '').replace(/\D/g, '');
+  if(!d) return '';
+  // Chile: los moviles son 9 digitos empezando en 9; el pais es 56.
+  if(d.length === 9 && d[0] === '9') d = '56' + d;
+  if(d.length === 8) d = '569' + d;              // por si lo escribieron sin el 9
+  return d.length >= 11 ? d : '';
+}
+
+function enlaceWhatsapp(tel, texto){
+  const num = telefonoWhatsapp(tel);
+  if(!num) return '';
+  return 'https://wa.me/' + num + '?text=' + encodeURIComponent(texto);
+}
+
 /* Avisarle a un jugador que hay una cancha libre en el bloque en que suele
    jugar. Es la otra mitad de la lista de llamados: en vez de telefonear, el
    aviso le llega dentro de la app con la acción para tomarlo. */
@@ -5167,6 +5197,26 @@ function openNotify(clubId, playerId, hora){
   $('nfDate').max = maxISO();
   $('nfDate').value = def.date;
 
+  // El telefono no viene en la carga general: se pide solo cuando se necesita.
+  avisoActual.tel = '';
+  $('nfTel').textContent = 'Buscando el teléfono…';
+  $('nfWhatsapp').hidden = true;
+  sb.rpc('club_contacto', { p_club:clubId, p_player:playerId }).then(function(r){
+    if(!avisoActual || avisoActual.playerId !== playerId) return;   // ya cambio de socio
+    const fila = (!r.error && r.data && r.data[0]) ? r.data[0] : null;
+    avisoActual.tel = fila ? (fila.phone || '') : '';
+    if(telefonoWhatsapp(avisoActual.tel)){
+      $('nfTel').textContent = 'WhatsApp a ' + avisoActual.tel;
+    } else {
+      $('nfTel').textContent = avisoActual.tel
+        ? 'El teléfono guardado (' + avisoActual.tel + ') no parece un móvil chileno, ' +
+          'así que no puedo armar el enlace de WhatsApp.'
+        : 'Este socio no tiene teléfono registrado, así que solo se le puede avisar ' +
+          'dentro de la app.';
+    }
+    componerAviso();
+  });
+
   componerAviso();
   openModal('notifyModal');
 }
@@ -5194,6 +5244,11 @@ function componerAviso(){
   box.textContent = libre
     ? '✓ Ese bloque está libre ahora mismo.'
     : '✕ Ese bloque ya está tomado. Puedes avisar igual, pero conviene revisar.';
+
+  // El enlace se rearma con cada cambio: si no, manda el mensaje viejo.
+  const wa = enlaceWhatsapp(avisoActual.tel, $('nfBody').value);
+  $('nfWhatsapp').hidden = !wa;
+  if(wa) $('nfWhatsapp').href = wa;
 }
 
 /* Marcar a un jugador como "no llamar". Es una anotación del club sobre su
@@ -6038,6 +6093,29 @@ function bindEvents(){
   // Avisar
   ['nfDate','nfTime','nfCourt'].forEach(function(id){
     $(id).addEventListener('input', componerAviso);
+  });
+  $('nfBody').addEventListener('input', function(){
+    const wa = enlaceWhatsapp(avisoActual && avisoActual.tel, this.value);
+    $('nfWhatsapp').hidden = !wa;
+    if(wa) $('nfWhatsapp').href = wa;
+  });
+
+  /* Al abrir WhatsApp se guarda igual el aviso en la app: asi el club tiene el
+     registro de que ofrecio esa cancha, y el jugador lo ve si entra. El enlace es
+     un <a> de verdad, no un window.open, para que ningun bloqueador lo frene. */
+  $('nfWhatsapp').addEventListener('click', function(){
+    if(!avisoActual) return;
+    const texto = $('nfBody').value.trim();
+    if(!texto) return;
+    enviarAviso(avisoActual.clubId, avisoActual.playerId, {
+      texto:texto, date:$('nfDate').value, time:$('nfTime').value,
+      court:parseInt($('nfCourt').value, 10) || 0
+    }).then(function(res){
+      closeModal('notifyModal');
+      toast(res.ok
+        ? 'WhatsApp abierto y el aviso queda registrado. Apreta enviar allá.'
+        : 'WhatsApp abierto, pero no pude registrar el aviso: ' + res.reason, !res.ok);
+    });
   });
   $('nfSend').addEventListener('click', async function(){
     if(!avisoActual) return;
